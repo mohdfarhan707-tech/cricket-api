@@ -1,0 +1,253 @@
+<div class="crex">
+  <!-- TOP NAV -->
+  <header class="crex-top">
+    <div class="crex-brand">
+      <div class="crex-logo">C</div>
+      <div class="crex-title">CricLive</div>
+    </div>
+
+    <nav class="crex-menu">
+      <button class="menu-link" [class.active]="headerPage === 'home'" (click)="openHeaderPage('home')" type="button">Home</button>
+      <button class="menu-link" type="button">Series</button>
+      <button class="menu-link" type="button">Teams</button>
+      <button class="menu-link" type="button">Fixtures</button>
+      <button class="menu-link" type="button">Stats Corner</button>
+      <button class="menu-link" type="button">Rankings</button>
+      <button class="menu-link" [class.active]="headerPage === 'news'" (click)="openHeaderPage('news')" type="button">News</button>
+    </nav>
+
+    <div class="crex-actions">
+      <div class="chip-live">{{ getMatchCount('live') }} Live</div>
+      <button class="action-btn" type="button" aria-label="Search">🔍</button>
+    </div>
+  </header>
+
+  <!-- MAIN 3-COLUMN LAYOUT -->
+  <main class="crex-main" *ngIf="headerPage === 'home'; else newsPage">
+    <!-- LEFT: TOP LEAGUES -->
+    <aside class="left">
+      <section class="panel">
+        <div class="panel-title">Top Leagues</div>
+        <button class="league-item" type="button" [class.active]="!selectedLeagueId" (click)="setLeague(null)">
+          <span class="league-dot">🏏</span>
+          <span class="league-name">All series</span>
+        </button>
+        <button
+          class="league-item"
+          type="button"
+          *ngFor="let s of masterData"
+          [class.active]="selectedLeagueId === s.external_id"
+          (click)="setLeague(s)"
+        >
+          <span class="league-dot">{{ getSeriesFlag(s.name) }}</span>
+          <span class="league-name">{{ s.name }}</span>
+        </button>
+      </section>
+    </aside>
+
+    <!-- CENTER: TABS + MATCH CARDS -->
+    <section class="center">
+      <div class="center-tabs">
+        <button class="center-tab" [class.active]="activeTab === 'all'" (click)="applyFilter('all')" type="button">ALL</button>
+        <button class="center-tab" [class.active]="activeTab === 'live'" (click)="applyFilter('live')" type="button">LIVE</button>
+        <button class="center-tab" [class.active]="activeTab === 'upcoming'" (click)="applyFilter('upcoming')" type="button">UPCOMING</button>
+        <button class="center-tab" [class.active]="activeTab === 'results'" (click)="applyFilter('results')" type="button">RESULTS</button>
+      </div>
+
+      <!-- LIVE: show only live matches -->
+      <div class="match-list" *ngIf="activeTab === 'live'">
+        <div class="match-card" *ngFor="let match of getLiveMatchesVisible()" (click)="openLiveScorecard(match)" role="button" tabindex="0">
+          <div class="mc-team left">
+            <img *ngIf="!isFallbackLogo(match.team_home)" class="mc-logo" [src]="getTeamLogoUrl(match.team_home)" (error)="onTeamLogoError($event)" alt="" />
+            <div *ngIf="isFallbackLogo(match.team_home)" class="mc-logo mc-initial">{{ getInitials(match.team_home) }}</div>
+            <div class="mc-teamcode">{{ getDisplayTeamName(match.team_home) }}</div>
+          </div>
+
+          <div class="mc-mid">
+            <div class="mc-live-pill">Live</div>
+            <div class="mc-score">
+              <span class="mc-scoreline">{{ match.home_score || '-' }}</span>
+              <span class="mc-dash">-</span>
+              <span class="mc-scoreline">{{ match.away_score || '-' }}</span>
+            </div>
+            <div class="mc-status">{{ match.status }}</div>
+          </div>
+
+          <div class="mc-team right">
+            <div class="mc-teamcode right">{{ getDisplayTeamName(match.team_away) }}</div>
+            <img *ngIf="!isFallbackLogo(match.team_away)" class="mc-logo" [src]="getTeamLogoUrl(match.team_away)" (error)="onTeamLogoError($event)" alt="" />
+            <div *ngIf="isFallbackLogo(match.team_away)" class="mc-logo mc-initial">{{ getInitials(match.team_away) }}</div>
+          </div>
+        </div>
+
+        <div class="empty" *ngIf="!getLiveMatchesVisible().length">No live matches right now.</div>
+      </div>
+
+      <!-- ALL/UPCOMING/RESULTS: show series matches + finished live results only (not live) -->
+      <div class="match-list" *ngIf="activeTab !== 'live'">
+        <div class="subpanel" *ngIf="getFinishedLiveResultsVisible().length">
+          <div class="subpanel-title">Recent live results</div>
+          <div class="match-card" *ngFor="let match of getFinishedLiveResultsVisible()" (click)="openLiveScorecard(match)" role="button" tabindex="0">
+            <div class="mc-team left">
+              <img *ngIf="!isFallbackLogo(match.team_home)" class="mc-logo" [src]="getTeamLogoUrl(match.team_home)" (error)="onTeamLogoError($event)" alt="" />
+              <div *ngIf="isFallbackLogo(match.team_home)" class="mc-logo mc-initial">{{ getInitials(match.team_home) }}</div>
+              <div class="mc-teamcode">{{ getDisplayTeamName(match.team_home) }}</div>
+            </div>
+            <div class="mc-mid">
+              <div class="mc-score">
+                <span class="mc-scoreline">{{ match.home_score || '-' }}</span>
+                <span class="mc-dash">-</span>
+                <span class="mc-scoreline">{{ match.away_score || '-' }}</span>
+              </div>
+              <div class="mc-status">{{ match.status }}</div>
+            </div>
+            <div class="mc-team right">
+              <div class="mc-teamcode right">{{ getDisplayTeamName(match.team_away) }}</div>
+              <img *ngIf="!isFallbackLogo(match.team_away)" class="mc-logo" [src]="getTeamLogoUrl(match.team_away)" (error)="onTeamLogoError($event)" alt="" />
+              <div *ngIf="isFallbackLogo(match.team_away)" class="mc-logo mc-initial">{{ getInitials(match.team_away) }}</div>
+            </div>
+          </div>
+        </div>
+
+        <ng-container *ngFor="let s of getVisibleSeries()">
+          <div class="subpanel">
+            <div class="subpanel-title">{{ s.name }}</div>
+            <div class="match-card" *ngFor="let match of s.matches" (click)="openScorecard(match)" role="button" tabindex="0">
+              <div class="mc-team left">
+                <img *ngIf="!isFallbackLogo(match.team_home)" class="mc-logo" [src]="getTeamLogoUrl(match.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                <div *ngIf="isFallbackLogo(match.team_home)" class="mc-logo mc-initial">{{ getInitials(match.team_home) }}</div>
+                <div class="mc-teamcode">{{ getDisplayTeamName(match.team_home) }}</div>
+              </div>
+              <div class="mc-mid">
+                <div class="mc-score">
+                  <span class="mc-scoreline">{{ match.home_score || '-' }}</span>
+                  <span class="mc-dash">-</span>
+                  <span class="mc-scoreline">{{ match.away_score || '-' }}</span>
+                </div>
+                <div class="mc-status">{{ match.status }}</div>
+              </div>
+              <div class="mc-team right">
+                <div class="mc-teamcode right">{{ getDisplayTeamName(match.team_away) }}</div>
+                <img *ngIf="!isFallbackLogo(match.team_away)" class="mc-logo" [src]="getTeamLogoUrl(match.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                <div *ngIf="isFallbackLogo(match.team_away)" class="mc-logo mc-initial">{{ getInitials(match.team_away) }}</div>
+              </div>
+            </div>
+          </div>
+        </ng-container>
+      </div>
+    </section>
+
+    <!-- RIGHT: NEWS PANEL -->
+    <aside class="right">
+      <section class="panel">
+        <div class="panel-title">News</div>
+        <a class="news-mini" *ngFor="let n of newsItems.slice(0, 8)" [href]="n.link" target="_blank" rel="noopener noreferrer">
+          <img *ngIf="n.image_url" class="news-mini-img" [src]="n.image_url" (error)="onTeamLogoError($event)" alt="" />
+          <div class="news-mini-body">
+            <div class="news-mini-title">{{ n.title }}</div>
+            <div class="news-mini-meta">{{ formatNewsDate(n.published_at) }}</div>
+          </div>
+        </a>
+        <div class="empty" *ngIf="!newsItems.length">No news loaded.</div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- NEWS PAGE (header menu -> News) -->
+  <ng-template #newsPage>
+    <main class="crex-main news-page">
+      <section class="center news-center">
+        <section class="panel">
+          <div class="panel-title">News</div>
+          <a
+            class="news-row"
+            *ngFor="let n of newsItems"
+            [href]="n.link"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <img *ngIf="n.image_url" class="news-image" [src]="n.image_url" (error)="onTeamLogoError($event)" alt="" />
+            <div class="news-left">
+              <div class="news-title">{{ n.title }}</div>
+              <div class="news-meta">
+                <span class="news-source">{{ n.source }}</span>
+                <span class="news-dot">•</span>
+                <span class="news-date">{{ formatNewsDate(n.published_at) }}</span>
+              </div>
+              <div class="news-summary" *ngIf="n.summary">{{ n.summary }}</div>
+            </div>
+          </a>
+          <div class="empty" *ngIf="!newsItems.length">No news loaded.</div>
+        </section>
+      </section>
+    </main>
+  </ng-template>
+
+  <!-- SCORECARD MODAL -->
+  <div class="modal-overlay" *ngIf="scorecardModalOpen" (click)="closeScorecard()">
+    <div class="scorecard-modal" (click)="$event.stopPropagation()">
+      <button class="modal-close" (click)="closeScorecard()" aria-label="Close">×</button>
+
+      <div *ngIf="scorecardLoading" class="scorecard-loading">Loading scorecard…</div>
+      <div *ngIf="scorecardError && !scorecardLoading" class="scorecard-error">{{ scorecardError }}</div>
+
+      <div *ngIf="scorecardData && !scorecardLoading" class="scorecard-content">
+        <div class="scorecard-header">
+          <h2 class="scorecard-title">{{ scorecardData.name }}</h2>
+          <p class="scorecard-status">{{ scorecardData.status }}</p>
+          <p class="scorecard-meta" *ngIf="scorecardData.venue">{{ scorecardData.venue }} • {{ scorecardData.date }}</p>
+        </div>
+
+        <div class="innings-summary" *ngIf="scorecardData.score?.length">
+          <div class="innings-line" *ngFor="let s of scorecardData.score">
+            <span class="innings-label">{{ s.inning }}</span>
+            <span class="innings-score">{{ s.r }}/{{ s.w }} <span class="innings-overs">({{ s.o }} ov)</span></span>
+          </div>
+        </div>
+
+        <div class="scorecard-innings" *ngIf="scorecardData.scorecard?.length">
+          <section class="inning-block" *ngFor="let inn of scorecardData.scorecard">
+            <h3 class="inning-title">{{ inn.inning }}</h3>
+
+            <div class="table-wrap">
+              <table class="score-table batting">
+                <thead>
+                  <tr><th>Batter</th><th></th><th>R</th><th>B</th><th>4s</th><th>6s</th><th>SR</th></tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let b of inn.batting" [class.dismissed]="b.dismissal">
+                    <td class="name">{{ b.batsman?.name }}</td>
+                    <td class="dismissal">{{ b['dismissal-text'] || (b.dismissal ? 'b' : '') }}</td>
+                    <td>{{ b.r }}</td>
+                    <td>{{ b.b }}</td>
+                    <td>{{ b['4s'] }}</td>
+                    <td>{{ b['6s'] }}</td>
+                    <td>{{ b.sr }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="table-wrap">
+              <table class="score-table bowling">
+                <thead>
+                  <tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Econ</th></tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let b of inn.bowling">
+                    <td class="name">{{ b.bowler?.name }}</td>
+                    <td>{{ b.o }}</td>
+                    <td>{{ b.m }}</td>
+                    <td>{{ b.r }}</td>
+                    <td>{{ b.w }}</td>
+                    <td>{{ b.eco }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
