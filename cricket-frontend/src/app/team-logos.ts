@@ -34,15 +34,15 @@ const TEAM_LOGO_RULES: LogoRule[] = [
 
   // --- WPL ---
   {
-    test: /mumbai\s+indians/i,
+    test: /(mumbai\s+indians|\bmi\b)/i,
     url: 'https://upload.wikimedia.org/wikipedia/en/thumb/c/cd/Mumbai_Indians_Logo.svg/330px-Mumbai_Indians_Logo.svg.png',
   },
   {
-    test: /delhi\s+capitals/i,
+    test: /(delhi\s+capitals|\bdc\b)/i,
     url: 'https://upload.wikimedia.org/wikipedia/en/thumb/2/2f/Delhi_Capitals.svg/330px-Delhi_Capitals.svg.png',
   },
   {
-    test: /royal\s+challengers\s+(bangalore|bengaluru)/i,
+    test: /(royal\s+challengers\s+bengaluru|\brcb\b)/i,
     url: 'https://upload.wikimedia.org/wikipedia/en/thumb/d/d4/Royal_Challengers_Bengaluru_Logo.svg/330px-Royal_Challengers_Bengaluru_Logo.svg.png',
   },
   {
@@ -52,6 +52,115 @@ const TEAM_LOGO_RULES: LogoRule[] = [
   {
     test: /gujarat\s+giants/i,
     url: 'https://upload.wikimedia.org/wikipedia/en/thumb/d/da/Gujarat_Giants_WPL_logo.svg/330px-Gujarat_Giants_WPL_logo.svg.png',
+  },
+
+  // --- Legends League Cricket 2026 (use country flag / generic cricket branding) ---
+  { test: /india\s+captains/i, url: 'https://upload.wikimedia.org/wikipedia/en/thumb/4/41/Flag_of_India.svg/330px-Flag_of_India.svg.png' },
+  { test: /india\s+tigers/i, url: 'https://upload.wikimedia.org/wikipedia/en/thumb/4/41/Flag_of_India.svg/330px-Flag_of_India.svg.png' },
+  { test: /konark\s+suryas\s+odisha/i, url: 'https://upload.wikimedia.org/wikipedia/en/thumb/4/41/Flag_of_India.svg/330px-Flag_of_India.svg.png' },
+  { test: /royal\s+rides?\s+punjab/i, url: 'https://upload.wikimedia.org/wikipedia/en/thumb/4/41/Flag_of_India.svg/330px-Flag_of_India.svg.png' },
+  { test: /southern\s+super\s+stars/i, url: 'https://upload.wikimedia.org/wikipedia/en/thumb/4/41/Flag_of_India.svg/330px-Flag_of_India.svg.png' },
+  { test: /mumbai\s+spartans/i, url: 'https://upload.wikimedia.org/wikipedia/en/thumb/4/41/Flag_of_India.svg/330px-Flag_of_India.svg.png' },
+
+  // New PSL 2026 expansion teams
+  {
+    test: /hyderabad\s+(houston\s+)?kingsmen/i,
+    url: 'assets/logos/Kingsmen.png',
+  },
+  {
+    test: /\bpindiz\b|rawalpindi\b/i,
+    url: 'assets/logos/pindis.png',
+  },
+
+  // --- Pakistan Super League (PSL) ---
+  {
+    test: /(islamabad\s+united|\biu\b)/i,
+    url: 'https://crystalpng.com/wp-content/uploads/2025/04/islamabad-united-logo.png',
+  },
+  {
+    test: /(karachi\s+kings|\bkk\b)/i,
+    url: 'https://crystalpng.com/wp-content/uploads/2025/04/karachi-kings-logo.png',
+  },
+  {
+    test: /(lahore\s+qalandars|\blq\b)/i,
+    url: 'https://crystalpng.com/wp-content/uploads/2025/04/lahore-qalandars-logo.png',
+  },
+  {
+    test: /(multan\s+sultans|\bms\b)/i,
+    url: 'https://crystalpng.com/wp-content/uploads/2025/04/multan-sultans-logo.png',
+  },
+  {
+    test: /(peshawar\s+zalmi|\bpz\b)/i,
+    url: 'https://crystalpng.com/wp-content/uploads/2025/04/peshawar-zalmi-logo.png',
+  },
+  {
+    test: /(quetta\s+gladiators|\bqg\b)/i,
+    url: 'https://crystalpng.com/wp-content/uploads/2025/04/quetta-gladiators-logo.png',
+  },
+
+  // --- Indian Premier League (IPL) ---
+  {
+    test: /(chennai\s+super\s+kings|\bcsk\b)/i,
+    url: 'https://iconape.com/wp-content/png_logo_vector/chennai-super-kings-logo.png',
+  },
+  {
+    test: /(kolkata\s+knight\s+riders|\bkkr\b)/i,
+    url: 'https://upload.wikimedia.org/wikipedia/en/thumb/4/4c/Kolkata_Knight_Riders_Logo.svg/330px-Kolkata_Knight_Riders_Logo.svg.png',
+  },
+  {
+    test: /(rajasthan\s+royals|\brr\b)/i,
+    url: 'https://iconape.com/wp-content/png_logo_vector/ipl-rajasthan-royals-logo.png',
+  },
+  {
+    test: /(punjab\s+kings|\bpbks\b)/i,
+    url: 'https://upload.wikimedia.org/wikipedia/en/thumb/d/d4/Punjab_Kings_Logo.svg/330px-Punjab_Kings_Logo.svg.png',
+  },
+  {
+    test: /(gujarat\s+titans|\bgt\b)/i,
+    url: 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_w_1280,q_80/lsci/db/PICTURES/CMS/334700/334707.png',
+  },
+  {
+    test: /(lucknow\s+super\s+giants|\blsg\b)/i,
+    url: 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_w_1280,q_80/lsci/db/PICTURES/CMS/333800/333885.png',
+  },
+  {
+    test: /(sunrisers?\s+hyderabad|\bsrh\b)/i,
+    url: 'https://iconape.com/wp-content/png_logo_vector/sunrisers-hyderabad-logo.png',
+  },
+
+  // --- Big Bash League (BBL) teams ---
+  // Note: These are franchise branding images; Cricbuzz/scorecard data uses team names like "Perth Scorchers".
+  {
+    test: /(perth\s+scorchers)/i,
+    url: 'https://upload.wikimedia.org/wikipedia/en/2/2f/WBBL05CapLogoScorchers.svg',
+  },
+  {
+    test: /(sydney\s+sixers)/i,
+    url: 'https://upload.wikimedia.org/wikipedia/en/7/78/WBBL05CapLogoSixers.svg',
+  },
+  {
+    test: /(brisbane\s+heat)/i,
+    url: 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_w_1280,q_80/lsci/db/PICTURES/CMS/313400/313466.png',
+  },
+  {
+    test: /(melbourne\s+renegades)/i,
+    url: 'https://upload.wikimedia.org/wikipedia/en/7/73/WBBL05CapLogoRenegades.svg',
+  },
+  {
+    test: /(hobart\s+hurricanes)/i,
+    url: 'assets/logos/hobart.png',
+  },
+  {
+    test: /(sydney\s+thunder)/i,
+    url: 'https://upload.wikimedia.org/wikipedia/en/7/73/WBBL05CapLogoThunder.svg',
+  },
+  {
+    test: /(adelaide\s+strikers)/i,
+    url: 'https://upload.wikimedia.org/wikipedia/en/c/c2/WBBL05CapLogoStrikers.svg',
+  },
+  {
+    test: /(melbourne\s+stars)/i,
+    url: 'https://upload.wikimedia.org/wikipedia/en/2/2d/WBBL05CapLogoStars.svg',
   },
 
   // --- ICC T20 World Cup (national teams – flags) ---

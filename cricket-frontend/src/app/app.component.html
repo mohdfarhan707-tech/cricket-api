@@ -1,4 +1,10 @@
-<div class="crex">
+<app-admin-dashboard
+  *ngIf="showAdminDashboard()"
+  (openPublicSite)="onOpenPublicSiteFromAdmin()"
+  (logout)="logout()"
+></app-admin-dashboard>
+
+<div class="crex" [class.dark]="darkMode" *ngIf="!showAdminDashboard()">
   <!-- TOP NAV -->
   <header class="crex-top">
     <div class="crex-brand">
@@ -7,46 +13,1182 @@
     </div>
 
     <nav class="crex-menu">
-      <button class="menu-link" [class.active]="headerPage === 'home'" (click)="openHeaderPage('home')" type="button">Home</button>
-      <button class="menu-link" type="button">Series</button>
-      <button class="menu-link" type="button">Teams</button>
-      <button class="menu-link" type="button">Fixtures</button>
-      <button class="menu-link" type="button">Stats Corner</button>
-      <button class="menu-link" type="button">Rankings</button>
-      <button class="menu-link" [class.active]="headerPage === 'news'" (click)="openHeaderPage('news')" type="button">News</button>
+      <ng-container *ngIf="auth.isLoggedIn(); else gateNavLabels">
+        <button class="menu-link" [class.active]="headerPage === 'home'" (click)="openHeaderPage('home')" type="button">Home</button>
+        <button class="menu-link" [class.active]="headerPage === 'teams'" (click)="openHeaderPage('teams')" type="button">Teams</button>
+        <button class="menu-link" [class.active]="headerPage === 'fixtures'" (click)="openHeaderPage('fixtures')" type="button">Fixtures</button>
+        <button class="menu-link" [class.active]="headerPage === 'rankings'" (click)="openHeaderPage('rankings')" type="button">Rankings</button>
+        <button class="menu-link" [class.active]="headerPage === 'news'" (click)="openHeaderPage('news')" type="button">News</button>
+        <button class="menu-link" [class.active]="headerPage === 'auction'" (click)="openHeaderPage('auction')" type="button">Mini Auction</button>
+        <button
+          type="button"
+          class="menu-link"
+          *ngIf="auth.isAdmin() && adminViewPublicApp"
+          (click)="goToAdminPanel()"
+        >
+          Admin
+        </button>
+      </ng-container>
+      <ng-template #gateNavLabels>
+        <span class="menu-link menu-link--gate">Home</span>
+        <span class="menu-link menu-link--gate">Teams</span>
+        <span class="menu-link menu-link--gate">Fixtures</span>
+        <span class="menu-link menu-link--gate">Rankings</span>
+        <span class="menu-link menu-link--gate">News</span>
+        <span class="menu-link menu-link--gate">Mini Auction</span>
+        <span class="menu-link active menu-link--gate">Login</span>
+      </ng-template>
+      <span class="auth-toolbar" *ngIf="auth.isLoggedIn()">
+        <span class="auth-toolbar-email">{{ authToolbarLabel }}</span>
+        <button class="menu-link auth-logout" type="button" (click)="logout()">Log out</button>
+      </span>
     </nav>
 
     <div class="crex-actions">
-      <div class="chip-live">{{ getMatchCount('live') }} Live</div>
-      <button class="action-btn" type="button" aria-label="Search">🔍</button>
+      <span class="chip-live chip-live--gate" *ngIf="!auth.isLoggedIn()" aria-hidden="true">0 Live</span>
+      <button class="chip-live" type="button" *ngIf="auth.isLoggedIn()" (click)="goToLiveMatches()" [attr.aria-label]="'View ' + getMatchCount('live') + ' live matches'">
+        {{ getMatchCount('live') }} Live
+      </button>
+      <button class="mode-btn" type="button" (click)="toggleDarkMode()">
+        <span class="mode-icon">{{ darkMode ? '☀' : '🌙' }}</span>
+        <span class="mode-label">{{ darkMode ? 'Bright' : 'Dark' }}</span>
+      </button>
     </div>
   </header>
 
+  <main class="auth-gate-main" *ngIf="!auth.isLoggedIn()">
+    <app-auth (done)="onAuthDone()"></app-auth>
+  </main>
+
+  <ng-container *ngIf="auth.isLoggedIn() && (!auth.isAdmin() || adminViewPublicApp)">
+  <!-- HIGHLIGHTS MODAL - placed first so it overlays everything -->
+  <div class="modal-overlay highlights-overlay" *ngIf="highlightsModalOpen" (click)="closeHighlightsFromOverlay()">
+    <div class="scorecard-modal highlights-modal" (click)="$event.stopPropagation()">
+      <button class="modal-close" (click)="closeHighlights()" aria-label="Close">×</button>
+
+      <div *ngIf="highlightsLoading" class="scorecard-loading">Loading highlights…</div>
+      <div *ngIf="highlightsError && !highlightsLoading" class="scorecard-error">{{ highlightsError }}</div>
+
+      <div *ngIf="!highlightsLoading && !highlightsError" class="scorecard-content">
+        <div class="scorecard-header">
+          <h2 class="scorecard-title">
+            {{ highlightsSelectedMatch?.team_home }} vs {{ highlightsSelectedMatch?.team_away }} Highlights
+          </h2>
+          <p class="scorecard-status">{{ highlightsData?.query }}</p>
+        </div>
+
+        <div class="hl-body">
+          <div class="hl-left">
+            <div class="hl-player-wrap" *ngIf="highlightsEmbedUrl; else noHlVideo">
+              <iframe
+                class="hl-player"
+                [src]="highlightsEmbedUrl"
+                title="YouTube highlights player"
+                frameborder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowfullscreen>
+              </iframe>
+            </div>
+            <ng-template #noHlVideo>
+              <div class="empty">No highlight video available.</div>
+            </ng-template>
+            <div class="hl-open-row" *ngIf="highlightsSelectedUrl">
+              <a class="up-action" [href]="highlightsSelectedUrl" target="_blank" rel="noopener noreferrer">Open on YouTube</a>
+            </div>
+          </div>
+
+          <div class="hl-right" *ngIf="highlightsData?.items?.length">
+            <div class="hl-list">
+              <button
+                type="button"
+                class="hl-item"
+                *ngFor="let v of highlightsData?.items"
+                [class.active]="v.videoId === highlightsSelectedVideoId"
+                (click)="selectHighlightVideo(v.videoId)"
+              >
+                <img class="hl-thumb" [src]="v.thumbnail" (error)="onTeamLogoError($event)" alt="" />
+                <span class="hl-meta">
+                  <span class="hl-title">{{ v.title }}</span>
+                  <span class="hl-sub">{{ v.channelTitle }}</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- MAIN 3-COLUMN LAYOUT -->
-  <main class="crex-main" *ngIf="headerPage === 'home'; else newsPage">
+  <main class="crex-main" *ngIf="headerPage === 'home'; else otherPage">
     <!-- LEFT: TOP LEAGUES -->
     <aside class="left">
       <section class="panel">
         <div class="panel-title">Top Leagues</div>
-        <button class="league-item" type="button" [class.active]="!selectedLeagueId" (click)="setLeague(null)">
+        <button class="league-item" type="button" [class.active]="selectedLeagueType === 'all'" (click)="setLeague(null)">
           <span class="league-dot">🏏</span>
           <span class="league-name">All series</span>
         </button>
         <button
           class="league-item"
           type="button"
-          *ngFor="let s of masterData"
-          [class.active]="selectedLeagueId === s.external_id"
+          [class.active]="selectedLeagueType === 'ipl'"
+          (click)="selectIPLLeague()"
+        >
+          <span class="league-dot">
+            <img class="league-logo" src="assets/logos/ipl.png" alt="IPL" />
+          </span>
+          <span class="league-name">Indian Premier League</span>
+        </button>
+        <button
+          class="league-item"
+          type="button"
+          [class.active]="selectedLeagueType === 'psl'"
+          (click)="selectPSLLeague()"
+        >
+          <span class="league-dot">
+            <img class="league-logo" src="assets/logos/psl.png" alt="PSL" />
+          </span>
+          <span class="league-name">Pakistan Super League</span>
+        </button>
+        <button
+          class="league-item"
+          type="button"
+          [class.active]="selectedLeagueType === 'bbl'"
+          (click)="selectBBLLeague()"
+        >
+          <span class="league-dot">
+            <img class="league-logo" src="assets/logos/bbl.png" alt="BBL" />
+          </span>
+          <span class="league-name">Big Bash League</span>
+        </button>
+        <button
+          class="league-item"
+          type="button"
+          *ngFor="let s of getSidebarSeries()"
+          [class.active]="(selectedLeagueType === 'series' || selectedLeagueType === 'wc') && selectedLeagueId === s.external_id"
           (click)="setLeague(s)"
         >
-          <span class="league-dot">{{ getSeriesFlag(s.name) }}</span>
+          <span class="league-dot">
+            <ng-container *ngIf="s.name.includes('ICC Men') && s.name.includes('T20 World Cup'); else seriesFlag">
+              <img
+                class="league-logo"
+                src="assets/logos/icct20.png"
+                alt="ICC Men's T20 World Cup"
+              />
+            </ng-container>
+            <ng-template #seriesFlag>
+              {{ getSeriesFlag(s.name) }}
+            </ng-template>
+          </span>
           <span class="league-name">{{ s.name }}</span>
         </button>
       </section>
     </aside>
 
-    <!-- CENTER: TABS + MATCH CARDS -->
+    <!-- CENTER: TABS + MATCH CARDS / LEAGUE VIEWS -->
     <section class="center">
+      <!-- Shared: ICC Men's T20 WC league card layout (up-card--score up-card--large) -->
+      <ng-template
+        #dashboardScoreUpCard
+        let-match="match"
+        let-seriesName="seriesName"
+        let-isLiveFeed="isLiveFeed"
+        let-liveWhenPrefix="liveWhenPrefix"
+      >
+        <div
+          class="up-card up-card--score up-card--large"
+          (click)="openDashboardMatchCentre($any(match), seriesName, isLiveFeed)"
+          role="button"
+          tabindex="0"
+        >
+          <div class="up-top">
+            <div class="up-venue-line">
+              {{
+                isLiveFeed
+                  ? getDashboardLiveFeedCardTitle($any(match))
+                  : getSeriesScoreCardTitle($any(match), seriesName)
+              }}
+            </div>
+            <div class="up-when">
+              <ng-container *ngIf="liveWhenPrefix">LIVE · </ng-container
+              >{{ getMatchDateFromScorecard(dashboardMatchAdapter(match, isLiveFeed)) || $any(match).status }}
+            </div>
+          </div>
+          <div class="up-main up-main--score">
+            <div class="up-teamblock left">
+              <span
+                class="logo-ring logo-ring--32"
+                [style.--ring-bg]="
+                  dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                    ? getTeamRingBg(getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 0))
+                    : getTeamRingBg($any(match).team_home)
+                "
+              >
+                <img
+                  *ngIf="
+                    !isFallbackLogo(
+                      dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                        ? getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 0)
+                        : $any(match).team_home
+                    )
+                  "
+                  class="logo-inner"
+                  [src]="
+                    getTeamLogoUrl(
+                      dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                        ? getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 0)
+                        : $any(match).team_home
+                    )
+                  "
+                  (error)="onTeamLogoError($event)"
+                  alt=""
+                />
+                <span
+                  *ngIf="
+                    isFallbackLogo(
+                      dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                        ? getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 0)
+                        : $any(match).team_home
+                    )
+                  "
+                  class="logo-inner logo-initial"
+                >
+                  {{
+                    getInitials(
+                      dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                        ? getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 0)
+                        : $any(match).team_home
+                    )
+                  }}
+                </span>
+              </span>
+              <div class="up-teamstack">
+                <div class="up-teamtext">
+                  {{
+                    dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                      ? getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 0)
+                      : getDisplayTeamName($any(match).team_home)
+                  }}
+                </div>
+                <div class="up-scoreline">
+                  {{
+                    dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                      ? getBblScoreLineByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 0)
+                      : ($any(match).home_score || getTeamScoreLineFromScorecard(dashboardMatchAdapter(match, isLiveFeed), $any(match).team_home) || (isFinishedStatusText($any(match).status) ? '—' : '-'))
+                  }}
+                </div>
+                <div class="up-overs">
+                  {{
+                    dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                      ? getBblOversByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 0)
+                      : getTeamOversFromScorecard(dashboardMatchAdapter(match, isLiveFeed), $any(match).team_home)
+                  }}
+                </div>
+              </div>
+            </div>
+
+            <div class="up-vs">Vs</div>
+
+            <div class="up-teamblock right">
+              <div class="up-teamstack right">
+                <div class="up-teamtext right">
+                  {{
+                    dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                      ? getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 1)
+                      : getDisplayTeamName($any(match).team_away)
+                  }}
+                </div>
+                <div class="up-scoreline right">
+                  {{
+                    dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                      ? getBblScoreLineByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 1)
+                      : ($any(match).away_score || getTeamScoreLineFromScorecard(dashboardMatchAdapter(match, isLiveFeed), $any(match).team_away) || (isFinishedStatusText($any(match).status) ? '—' : '-'))
+                  }}
+                </div>
+                <div class="up-overs right">
+                  {{
+                    dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                      ? getBblOversByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 1)
+                      : getTeamOversFromScorecard(dashboardMatchAdapter(match, isLiveFeed), $any(match).team_away)
+                  }}
+                </div>
+              </div>
+              <span
+                class="logo-ring logo-ring--32"
+                [style.--ring-bg]="
+                  dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                    ? getTeamRingBg(getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 1))
+                    : getTeamRingBg($any(match).team_away)
+                "
+              >
+                <img
+                  *ngIf="
+                    !isFallbackLogo(
+                      dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                        ? getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 1)
+                        : $any(match).team_away
+                    )
+                  "
+                  class="logo-inner"
+                  [src]="
+                    getTeamLogoUrl(
+                      dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                        ? getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 1)
+                        : $any(match).team_away
+                    )
+                  "
+                  (error)="onTeamLogoError($event)"
+                  alt=""
+                />
+                <span
+                  *ngIf="
+                    isFallbackLogo(
+                      dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                        ? getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 1)
+                        : $any(match).team_away
+                    )
+                  "
+                  class="logo-inner logo-initial"
+                >
+                  {{
+                    getInitials(
+                      dashboardUseBblLayout(match, seriesName, isLiveFeed)
+                        ? getBblTeamByScoreIndex(dashboardMatchAdapter(match, isLiveFeed), 1)
+                        : $any(match).team_away
+                    )
+                  }}
+                </span>
+              </span>
+            </div>
+
+            <div class="up-icons" (click)="$event.stopPropagation()">
+              <span class="up-report-tipwrap" *ngIf="showLiveFeedMatchReportButton(isLiveFeed, match)">
+                <button
+                  type="button"
+                  class="up-icbtn up-icbtn--grid up-icbtn--report"
+                  (click)="
+                    $event.stopPropagation();
+                    openMatchReport(dashboardMatchAdapter(match, isLiveFeed), dashboardReportSeriesName(match, seriesName, isLiveFeed))
+                  "
+                  aria-label="Match Reports"
+                >
+                  ▦
+                </button>
+                <span class="up-report-tip" role="tooltip">
+                  <span class="up-report-tip-text">Match Reports</span>
+                </span>
+              </span>
+            </div>
+
+            <button
+              class="up-action"
+              type="button"
+              (click)="
+                $event.stopPropagation();
+                openDashboardMatchCentre($any(match), seriesName, isLiveFeed)
+              "
+            >
+              Match Centre
+            </button>
+          </div>
+        </div>
+      </ng-template>
+      <!-- Special league view for IPL / PSL / BBL / World Cup -->
+      <ng-container *ngIf="selectedLeagueType === 'ipl' || selectedLeagueType === 'psl' || selectedLeagueType === 'bbl' || selectedLeagueType === 'wc'; else defaultCenter">
+        <div class="league-header">
+          <div class="league-title">
+            <img
+              *ngIf="selectedLeagueType === 'ipl'"
+              class="league-logo"
+              src="assets/logos/ipl.png"
+              alt="IPL"
+            />
+            <img
+              *ngIf="selectedLeagueType === 'psl'"
+              class="league-logo"
+              src="assets/logos/psl.png"
+              alt="PSL"
+            />
+            <img
+              *ngIf="selectedLeagueType === 'bbl'"
+              class="league-logo"
+              src="assets/logos/bbl.png"
+              alt="BBL"
+            />
+            <img
+              *ngIf="selectedLeagueType === 'wc'"
+              class="league-logo"
+              src="assets/logos/icct20.png"
+              alt="ICC Men's T20 World Cup"
+            />
+            {{
+              selectedLeagueType === 'ipl'
+                ? 'Indian Premier League'
+                : selectedLeagueType === 'psl'
+                  ? 'Pakistan Super League'
+                  : selectedLeagueType === 'bbl'
+                    ? 'Big Bash League'
+                    : 'ICC Men\'s T20 World Cup 2026'
+            }}
+          </div>
+          <div class="league-subtabs">
+            <button
+              type="button"
+              class="league-subtab"
+              [class.active]="leagueSubTab === 'matches'"
+              (click)="setLeagueSubTab('matches')"
+            >
+              Matches
+            </button>
+            <button
+              type="button"
+              class="league-subtab"
+              [class.active]="leagueSubTab === 'points'"
+              (click)="setLeagueSubTab('points')"
+            >
+              Points table
+            </button>
+            <button
+              type="button"
+              class="league-subtab"
+              [class.active]="leagueSubTab === 'stats'"
+              (click)="setLeagueSubTab('stats')"
+            >
+              Stats
+            </button>
+          </div>
+        </div>
+
+        <!-- League MATCHES: BBL from main API; IPL/PSL = completed (matches API) + upcoming (fetch_upcoming cache) -->
+        <div class="match-list" *ngIf="leagueSubTab === 'matches'">
+          <!-- BBL: score-style cards from series matches -->
+          <ng-container *ngIf="selectedLeagueType === 'bbl'">
+            <ng-container *ngIf="getBblSeriesMatches().length; else noBblMatches">
+              <div
+                class="up-card up-card--score up-card--large"
+                *ngFor="let match of getBblSeriesMatches()"
+                (click)="openBblMatchCentre(match)"
+                role="button"
+                tabindex="0"
+              >
+                <div class="up-top">
+                  <div class="up-venue-line">{{ getWcMatchCardTitle(match) || match.name || '' }}</div>
+                  <div class="up-when">{{ getMatchDateFromScorecard(match) || match.status }}</div>
+                </div>
+                <div class="up-main up-main--score">
+                  <div class="up-teamblock left">
+                    <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(match.team_home)">
+                      <img *ngIf="!isFallbackLogo(match.team_home)" class="logo-inner" [src]="getTeamLogoUrl(match.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(match.team_home)" class="logo-inner logo-initial">{{ getInitials(match.team_home) }}</span>
+                    </span>
+                    <div class="up-teamstack">
+                      <div class="up-teamtext">{{ getDisplayTeamName(match.team_home) }}</div>
+                      <div class="up-scoreline">{{ match.home_score || getTeamScoreLineFromScorecard(match, match.team_home) || '-' }}</div>
+                      <div class="up-overs">{{ getTeamOversFromScorecard(match, match.team_home) }}</div>
+                    </div>
+                  </div>
+                  <div class="up-vs">Vs</div>
+                  <div class="up-teamblock right">
+                    <div class="up-teamstack right">
+                      <div class="up-teamtext right">{{ getDisplayTeamName(match.team_away) }}</div>
+                      <div class="up-scoreline right">{{ match.away_score || getTeamScoreLineFromScorecard(match, match.team_away) || '-' }}</div>
+                      <div class="up-overs right">{{ getTeamOversFromScorecard(match, match.team_away) }}</div>
+                    </div>
+                    <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(match.team_away)">
+                      <img *ngIf="!isFallbackLogo(match.team_away)" class="logo-inner" [src]="getTeamLogoUrl(match.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(match.team_away)" class="logo-inner logo-initial">{{ getInitials(match.team_away) }}</span>
+                    </span>
+                  </div>
+                  <div class="up-icons" (click)="$event.stopPropagation()">
+                    <span class="up-report-tipwrap">
+                      <button
+                        type="button"
+                        class="up-icbtn up-icbtn--grid up-icbtn--report"
+                        (click)="$event.stopPropagation(); openMatchReport(match, 'Big Bash League 2025-26')"
+                        aria-label="Match Reports"
+                      >
+                        ▦
+                      </button>
+                      <span class="up-report-tip" role="tooltip">
+                        <span class="up-report-tip-text">Match Reports</span>
+                      </span>
+                    </span>
+                    <span class="up-report-tipwrap">
+                      <button type="button" class="up-icbtn up-icbtn--play" (click)="onWorldCupHighlightsClick(match, $event)" aria-label="Highlights">▶</button>
+                      <span class="up-report-tip" role="tooltip">
+                        <span class="up-report-tip-text">Highlights</span>
+                      </span>
+                    </span>
+                  </div>
+                  <button class="up-action" type="button" (click)="$event.stopPropagation(); openBblMatchCentre(match)">Match Centre</button>
+                </div>
+              </div>
+            </ng-container>
+            <ng-template #noBblMatches>
+              <div class="empty">No BBL matches yet. Run: python manage.py fetch_bbl_matches</div>
+            </ng-template>
+          </ng-container>
+
+          <!-- IPL / PSL: completed (matches API) + upcoming fixtures -->
+          <ng-container *ngIf="selectedLeagueType === 'ipl' || selectedLeagueType === 'psl'">
+            <ng-container *ngIf="!iplPslMatchesTabIsEmpty(); else noLeagueFixtures">
+              <ng-container *ngIf="(selectedLeagueType === 'ipl' ? getIplFinishedLiveResults() : getPslFinishedLiveResults()).length">
+                <div class="up-date">Recent results</div>
+                <ng-container *ngFor="let match of (selectedLeagueType === 'ipl' ? getIplFinishedLiveResults() : getPslFinishedLiveResults())">
+                  <ng-container
+                    *ngTemplateOutlet="
+                      dashboardScoreUpCard;
+                      context: {
+                        match: match,
+                        seriesName: '',
+                        isLiveFeed: true,
+                        liveWhenPrefix: false
+                      }
+                    "
+                  ></ng-container>
+                </ng-container>
+              </ng-container>
+              <ng-container *ngIf="(selectedLeagueType === 'ipl' ? getIplFixtures() : getPslFixtures()).length">
+                <div class="up-date" *ngIf="(selectedLeagueType === 'ipl' ? getIplFinishedLiveResults() : getPslFinishedLiveResults()).length">Upcoming</div>
+                <ng-container *ngFor="let g of (selectedLeagueType === 'ipl' ? getIplFixtures() : getPslFixtures())">
+                  <div class="up-card">
+                    <div class="up-top">
+                      <div class="up-venue-line">{{ g.venue || '' }}</div>
+                      <div class="up-when">{{ g.date_ist }} • {{ g.time_ist }}</div>
+                    </div>
+                    <div class="up-main">
+                      <div class="up-teamblock left">
+                        <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(g.team_home)">
+                          <img *ngIf="!isFallbackLogo(g.team_home)" class="logo-inner" [src]="getTeamLogoUrl(g.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                          <span *ngIf="isFallbackLogo(g.team_home)" class="logo-inner logo-initial">{{ getInitials(g.team_home) }}</span>
+                        </span>
+                        <div class="up-teamtext">{{ getDisplayTeamName(g.team_home) }}</div>
+                      </div>
+                      <div class="up-vs">Vs</div>
+                      <div class="up-teamblock right">
+                        <div class="up-teamtext right">{{ getDisplayTeamName(g.team_away) }}</div>
+                        <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(g.team_away)">
+                          <img *ngIf="!isFallbackLogo(g.team_away)" class="logo-inner" [src]="getTeamLogoUrl(g.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                          <span *ngIf="isFallbackLogo(g.team_away)" class="logo-inner logo-initial">{{ getInitials(g.team_away) }}</span>
+                        </span>
+                      </div>
+                      <button class="up-action" type="button" (click)="openMatchCentre(g, $event)">Match Centre</button>
+                    </div>
+                  </div>
+                </ng-container>
+              </ng-container>
+            </ng-container>
+            <ng-template #noLeagueFixtures>
+              <div class="empty">No IPL/PSL data yet. Sync matches and upcoming via the API (refresh matches and run fetch_upcoming).</div>
+            </ng-template>
+          </ng-container>
+
+          <ng-container *ngIf="selectedLeagueType === 'wc'">
+            <ng-container *ngIf="getWorldCupSeriesMatches().length; else noWcMatches">
+              <div
+                class="up-card up-card--score up-card--large"
+                *ngFor="let match of getWorldCupSeriesMatches()"
+                (click)="openWorldCupMatchCentre(match)"
+                role="button"
+                tabindex="0"
+              >
+                <div class="up-top">
+                  <div class="up-venue-line">{{ getWcMatchCardTitle(match) || match.name || '' }}</div>
+                  <div class="up-when">{{ getMatchDateFromScorecard(match) || match.status }}</div>
+                </div>
+                <div class="up-main up-main--score">
+                  <div class="up-teamblock left">
+                    <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(match.team_home)">
+                      <img *ngIf="!isFallbackLogo(match.team_home)" class="logo-inner" [src]="getTeamLogoUrl(match.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(match.team_home)" class="logo-inner logo-initial">{{ getInitials(match.team_home) }}</span>
+                    </span>
+                    <div class="up-teamstack">
+                      <div class="up-teamtext">{{ getDisplayTeamName(match.team_home) }}</div>
+                      <div class="up-scoreline">{{ match.home_score || getTeamScoreLineFromScorecard(match, match.team_home) || '-' }}</div>
+                      <div class="up-overs">{{ getTeamOversFromScorecard(match, match.team_home) }}</div>
+                    </div>
+                  </div>
+                  <div class="up-vs">Vs</div>
+                  <div class="up-teamblock right">
+                    <div class="up-teamstack right">
+                      <div class="up-teamtext right">{{ getDisplayTeamName(match.team_away) }}</div>
+                      <div class="up-scoreline right">{{ match.away_score || getTeamScoreLineFromScorecard(match, match.team_away) || '-' }}</div>
+                      <div class="up-overs right">{{ getTeamOversFromScorecard(match, match.team_away) }}</div>
+                    </div>
+                    <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(match.team_away)">
+                      <img *ngIf="!isFallbackLogo(match.team_away)" class="logo-inner" [src]="getTeamLogoUrl(match.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(match.team_away)" class="logo-inner logo-initial">{{ getInitials(match.team_away) }}</span>
+                    </span>
+                  </div>
+                  <div class="up-icons" (click)="$event.stopPropagation()">
+                    <span class="up-report-tipwrap">
+                      <button type="button" class="up-icbtn up-icbtn--grid up-icbtn--report" (click)="$event.stopPropagation(); openMatchReport(match, 'ICC Mens T20 World Cup 2026')" aria-label="Match Reports">▦</button>
+                    </span>
+                    <span class="up-report-tipwrap">
+                      <button type="button" class="up-icbtn up-icbtn--play" (click)="onWorldCupHighlightsClick(match, $event)" aria-label="Highlights">▶</button>
+                    </span>
+                  </div>
+                  <button class="up-action" type="button" (click)="$event.stopPropagation(); openWorldCupMatchCentre(match)">Match Centre</button>
+                </div>
+              </div>
+            </ng-container>
+            <ng-template #noWcMatches>
+              <div class="empty">No World Cup matches found.</div>
+            </ng-template>
+          </ng-container>
+        </div>
+
+        <!-- League POINTS TABLE -->
+        <div class="match-list" *ngIf="leagueSubTab === 'points'">
+          <div class="league-subtabs" *ngIf="selectedLeagueType === 'wc'" style="margin-bottom: 10px;">
+            <button
+              type="button"
+              class="league-subtab"
+              [class.active]="wcPointsStage === 'group'"
+              (click)="wcPointsStage = 'group'"
+            >
+              Group Stage
+            </button>
+            <button
+              type="button"
+              class="league-subtab"
+              [class.active]="wcPointsStage === 'super8'"
+              (click)="wcPointsStage = 'super8'"
+            >
+              Super 8
+            </button>
+          </div>
+          <div class="points-card">
+            <div class="points-series-title" *ngIf="selectedLeagueType === 'ipl' && leagueStandingsTitleIpl">{{ leagueStandingsTitleIpl }}</div>
+            <div class="points-series-title" *ngIf="selectedLeagueType === 'psl' && leagueStandingsTitlePsl">{{ leagueStandingsTitlePsl }}</div>
+            <div class="empty" *ngIf="leagueStandingsError && (selectedLeagueType === 'ipl' || selectedLeagueType === 'psl')">{{ leagueStandingsError }}</div>
+            <table class="points-table">
+              <thead>
+                <tr>
+                  <th class="pt-team">Team</th>
+                  <th>P</th>
+                  <th>W</th>
+                  <th>L</th>
+                  <th>NR</th>
+                  <th>NRR</th>
+                  <th>Pts</th>
+                </tr>
+              </thead>
+              <tbody *ngIf="selectedLeagueType === 'ipl'">
+                <tr *ngIf="leagueStandingsLoading"><td colspan="7" class="pt-loading">Loading standings…</td></tr>
+                <tr *ngFor="let t of (leagueStandingsIpl || [])">
+                  <td class="pt-team-cell">
+                    <span class="logo-ring logo-ring--26" [style.--ring-bg]="getTeamRingBg(t.team)">
+                      <img *ngIf="!isFallbackLogo(t.team)" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(t.team)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(t.team)" class="logo-inner logo-initial">{{ getInitials(t.team) }}</span>
+                    </span>
+                    <span class="pt-code">{{ t.team_s_name || getDisplayTeamName(t.team) }}</span>
+                  </td>
+                  <td>{{ t.P }}</td>
+                  <td>{{ t.W }}</td>
+                  <td>{{ t.L }}</td>
+                  <td>{{ t.NR }}</td>
+                  <td>{{ t.NRR }}</td>
+                  <td>{{ t.Pts }}</td>
+                </tr>
+                <tr *ngIf="!leagueStandingsLoading && leagueStandingsIpl !== null && !leagueStandingsIpl.length && !leagueStandingsError">
+                  <td colspan="7" class="empty">No standings data yet.</td>
+                </tr>
+              </tbody>
+              <tbody *ngIf="selectedLeagueType === 'psl'">
+                <tr *ngIf="leagueStandingsLoading"><td colspan="7" class="pt-loading">Loading standings…</td></tr>
+                <tr *ngFor="let t of (leagueStandingsPsl || [])">
+                  <td class="pt-team-cell">
+                    <span class="logo-ring logo-ring--26" [style.--ring-bg]="getTeamRingBg(t.team)">
+                      <img *ngIf="!isFallbackLogo(t.team)" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(t.team)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(t.team)" class="logo-inner logo-initial">{{ getInitials(t.team) }}</span>
+                    </span>
+                    <span class="pt-code">{{ t.team_s_name || getDisplayTeamName(t.team) }}</span>
+                  </td>
+                  <td>{{ t.P }}</td>
+                  <td>{{ t.W }}</td>
+                  <td>{{ t.L }}</td>
+                  <td>{{ t.NR }}</td>
+                  <td>{{ t.NRR }}</td>
+                  <td>{{ t.Pts }}</td>
+                </tr>
+                <tr *ngIf="!leagueStandingsLoading && leagueStandingsPsl !== null && !leagueStandingsPsl.length && !leagueStandingsError">
+                  <td colspan="7" class="empty">No standings data yet.</td>
+                </tr>
+              </tbody>
+              <tbody *ngIf="selectedLeagueType === 'bbl'">
+                <tr *ngFor="let t of bblPointsTable">
+                  <td class="pt-team-cell">
+                    <span *ngIf="t.qualified" class="pt-q">Q</span>
+                    <span class="logo-ring logo-ring--26" [style.--ring-bg]="getTeamRingBg(t.team)">
+                      <img *ngIf="!isFallbackLogo(t.team)" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(t.team)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(t.team)" class="logo-inner logo-initial">{{ getInitials(t.team) }}</span>
+                    </span>
+                    <span class="pt-code">{{ t.team }}</span>
+                  </td>
+                  <td>{{ t.P }}</td>
+                  <td>{{ t.W }}</td>
+                  <td>{{ t.L }}</td>
+                  <td>{{ t.NR }}</td>
+                  <td>{{ t.NRR }}</td>
+                  <td>{{ t.Pts }}</td>
+                </tr>
+              </tbody>
+              <tbody *ngIf="selectedLeagueType === 'wc'">
+                <ng-container *ngIf="wcPointsStage === 'group'">
+                  <ng-container *ngFor="let g of wcPointsGroups">
+                    <tr>
+                      <td class="pt-team-cell" colspan="7" style="font-weight: 800; background: rgba(30,58,138,0.06);">{{ g.group }}</td>
+                    </tr>
+                    <tr *ngFor="let t of g.rows">
+                      <td class="pt-team-cell">
+                        <span class="logo-ring logo-ring--26" [style.--ring-bg]="getTeamRingBg(t.team)">
+                          <img *ngIf="!isFallbackLogo(t.team)" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(t.team)" (error)="onTeamLogoError($event)" alt="" />
+                          <span *ngIf="isFallbackLogo(t.team)" class="logo-inner logo-initial">{{ getInitials(t.team) }}</span>
+                        </span>
+                        <span class="pt-code">{{ t.team }}</span>
+                      </td>
+                      <td>{{ t.P }}</td>
+                      <td>{{ t.W }}</td>
+                      <td>{{ t.L }}</td>
+                      <td>{{ t.NR }}</td>
+                      <td>{{ t.NRR }}</td>
+                      <td>{{ t.Pts }}</td>
+                    </tr>
+                  </ng-container>
+                </ng-container>
+                <ng-container *ngIf="wcPointsStage === 'super8'">
+                  <ng-container *ngFor="let g of wcSuper8PointsGroups">
+                    <tr>
+                      <td class="pt-team-cell" colspan="7" style="font-weight: 800; background: rgba(30,58,138,0.06);">{{ g.group }}</td>
+                    </tr>
+                    <tr *ngFor="let t of g.rows">
+                      <td class="pt-team-cell">
+                        <span class="logo-ring logo-ring--26" [style.--ring-bg]="getTeamRingBg(t.team)">
+                          <img *ngIf="!isFallbackLogo(t.team)" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(t.team)" (error)="onTeamLogoError($event)" alt="" />
+                          <span *ngIf="isFallbackLogo(t.team)" class="logo-inner logo-initial">{{ getInitials(t.team) }}</span>
+                        </span>
+                        <span class="pt-code">{{ t.team }}</span>
+                      </td>
+                      <td>{{ t.P }}</td>
+                      <td>{{ t.W }}</td>
+                      <td>{{ t.L }}</td>
+                      <td>{{ t.NR }}</td>
+                      <td>{{ t.NRR }}</td>
+                      <td>{{ t.Pts }}</td>
+                    </tr>
+                  </ng-container>
+                </ng-container>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- League STATS (simple placeholder for now) -->
+        <div class="match-list" *ngIf="leagueSubTab === 'stats'">
+          <ng-container *ngIf="selectedLeagueType === 'bbl'; else wcOrOtherStats">
+            <div class="stats-card">
+              <div class="stats-card-title">Big Bash League 2025/26 Stats</div>
+
+              <div class="empty" *ngIf="bblStatsLoading">Loading stats…</div>
+              <div class="empty" *ngIf="!bblStatsLoading && bblStatsError">{{ bblStatsError }}</div>
+
+              <ng-container *ngIf="!bblStatsLoading && !bblStatsError && bblStatsData as d">
+                <div class="stats-section">
+                  <div class="stats-section-title">Top Run Scorers</div>
+                  <table class="points-table stats-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Player</th>
+                        <th>Team</th>
+                        <th>Runs</th>
+                        <th>Inns</th>
+                        <th>Avg</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let r of d.topRunScorers; let i = index">
+                        <td>{{ i + 1 }}</td>
+                        <td class="stats-td-left">{{ r.name }}</td>
+                        <td>{{ r.teamShort }}</td>
+                        <td>{{ r.runs }}</td>
+                        <td>{{ r.innings }}</td>
+                        <td>{{ r.average | number:'1.2-2' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="stats-section">
+                  <div class="stats-section-title">Top Wicket Takers</div>
+                  <table class="points-table stats-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Player</th>
+                        <th>Team</th>
+                        <th>Wkts</th>
+                        <th>Inns</th>
+                        <th>Avg</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let r of d.topWicketTakers; let i = index">
+                        <td>{{ i + 1 }}</td>
+                        <td class="stats-td-left">{{ r.name }}</td>
+                        <td>{{ r.teamShort }}</td>
+                        <td>{{ r.wickets }}</td>
+                        <td>{{ r.innings }}</td>
+                        <td>{{ r.average | number:'1.2-2' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="stats-section">
+                  <div class="stats-section-title">Best Batting Strike Rates</div>
+                  <table class="points-table stats-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Player</th>
+                        <th>Team</th>
+                        <th>SR</th>
+                        <th>Inns</th>
+                        <th>Avg</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let r of d.bestBattingStrikeRates; let i = index">
+                        <td>{{ i + 1 }}</td>
+                        <td class="stats-td-left">{{ r.name }}</td>
+                        <td>{{ r.teamShort }}</td>
+                        <td>{{ r.strikeRate | number:'1.2-2' }}</td>
+                        <td>{{ r.innings }}</td>
+                        <td>{{ r.average | number:'1.2-2' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="stats-section">
+                  <div class="stats-section-title">Best Bowling Economy</div>
+                  <table class="points-table stats-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Player</th>
+                        <th>Team</th>
+                        <th>Econ</th>
+                        <th>Inns</th>
+                        <th>Avg</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let r of d.bestBowlingEconomy; let i = index">
+                        <td>{{ i + 1 }}</td>
+                        <td class="stats-td-left">{{ r.name }}</td>
+                        <td>{{ r.teamShort }}</td>
+                        <td>{{ r.economy | number:'1.2-2' }}</td>
+                        <td>{{ r.innings }}</td>
+                        <td>{{ r.average | number:'1.2-2' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="stats-section">
+                  <div class="stats-section-title">Smart Stats — Total Impact</div>
+                  <table class="points-table stats-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Player</th>
+                        <th>Team</th>
+                        <th>Impact</th>
+                        <th>Runs</th>
+                        <th>Wkts</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let r of d.smartStatsTotalImpact; let i = index">
+                        <td>{{ i + 1 }}</td>
+                        <td class="stats-td-left">{{ r.name }}</td>
+                        <td>{{ r.teamShort }}</td>
+                        <td>{{ r.impactPts | number:'1.2-2' }}</td>
+                        <td>{{ r.runs }}</td>
+                        <td>{{ r.wickets == null ? '—' : r.wickets }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </ng-container>
+            </div>
+          </ng-container>
+
+          <ng-template #wcOrOtherStats>
+            <ng-container *ngIf="selectedLeagueType === 'wc'; else otherStats">
+              <div class="stats-card">
+                <div class="stats-card-title">ICC Men's T20 World Cup 2026 Stats</div>
+                <div class="stats-section">
+                  <div class="stats-section-title">Top Run Scorers</div>
+                  <table class="points-table stats-table"><tbody>
+                    <tr *ngFor="let r of wcStatsData.topRunScorers"><td class="stats-td-left">{{ r.name }}</td><td>{{ r.teamShort }}</td><td>{{ r.runs }}</td><td>{{ r.innings }}</td><td>{{ r.average | number:'1.2-2' }}</td></tr>
+                  </tbody></table>
+                </div>
+                <div class="stats-section">
+                  <div class="stats-section-title">Top Wicket Takers</div>
+                  <table class="points-table stats-table"><tbody>
+                    <tr *ngFor="let r of wcStatsData.topWicketTakers"><td class="stats-td-left">{{ r.name }}</td><td>{{ r.teamShort }}</td><td>{{ r.wickets }}</td><td>{{ r.innings }}</td><td>{{ r.average | number:'1.2-2' }}</td></tr>
+                  </tbody></table>
+                </div>
+              </div>
+            </ng-container>
+          </ng-template>
+          <ng-template #otherStats>
+            <ng-container *ngIf="selectedLeagueType === 'ipl'; else pslStatsOrSoon">
+              <div class="stats-card">
+                <div class="stats-card-title">Indian Premier League — player stats</div>
+                <div class="stats-season-pill">SEASON 2026 · Orange Cap &amp; Purple Cap</div>
+
+                <div class="stats-section">
+                  <div class="stats-section-title">Orange Cap (most runs)</div>
+                  <div class="stats-table-wrap">
+                    <table class="points-table stats-table stats-table--leaderboard">
+                      <thead>
+                        <tr>
+                          <th>POS</th>
+                          <th>Player</th>
+                          <th class="stats-primary-col">Runs</th>
+                          <th>Mat</th>
+                          <th>Inns</th>
+                          <th>NO</th>
+                          <th>HS</th>
+                          <th>Avg</th>
+                          <th>BF</th>
+                          <th>SR</th>
+                          <th>100</th>
+                          <th>50</th>
+                          <th>4s</th>
+                          <th>6s</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr *ngFor="let r of iplOrangeCap2026">
+                          <td>{{ r.pos }}</td>
+                          <td class="stats-td-left stats-player-cell">
+                            <span class="logo-ring logo-ring--26" [style.--ring-bg]="getTeamRingBg(leaderboardFranchiseNameForLogo(r.teamShort, 'ipl'))">
+                              <img *ngIf="!isFallbackLogo(leaderboardFranchiseNameForLogo(r.teamShort, 'ipl'))" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(leaderboardFranchiseNameForLogo(r.teamShort, 'ipl'))" (error)="onTeamLogoError($event)" alt="" />
+                              <span *ngIf="isFallbackLogo(leaderboardFranchiseNameForLogo(r.teamShort, 'ipl'))" class="logo-inner logo-initial">{{ getInitials(r.name) }}</span>
+                            </span>
+                            <span class="stats-player-meta">
+                              <span class="stats-player-name">{{ r.name }}</span>
+                              <span class="stats-player-team">{{ r.teamShort }}</span>
+                            </span>
+                          </td>
+                          <td class="stats-primary-col">{{ r.runs }}</td>
+                          <td>{{ r.mat }}</td>
+                          <td>{{ r.inns }}</td>
+                          <td>{{ r.notOut }}</td>
+                          <td>{{ r.hs }}</td>
+                          <td>{{ r.avg | number:'1.2-2' }}</td>
+                          <td>{{ r.bf }}</td>
+                          <td>{{ r.sr | number:'1.2-2' }}</td>
+                          <td>{{ r.hundreds }}</td>
+                          <td>{{ r.fifties }}</td>
+                          <td>{{ r.fours }}</td>
+                          <td>{{ r.sixes }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="stats-section">
+                  <div class="stats-section-title">Purple Cap (most wickets)</div>
+                  <div class="stats-table-wrap">
+                    <table class="points-table stats-table stats-table--leaderboard">
+                      <thead>
+                        <tr>
+                          <th>POS</th>
+                          <th>Player</th>
+                          <th class="stats-primary-col">Wkts</th>
+                          <th>Mat</th>
+                          <th>Inns</th>
+                          <th>Ov</th>
+                          <th>Runs</th>
+                          <th>BBI</th>
+                          <th>Avg</th>
+                          <th>Econ</th>
+                          <th>SR</th>
+                          <th>4w</th>
+                          <th>5w</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr *ngFor="let r of iplPurpleCap2026">
+                          <td>{{ r.pos }}</td>
+                          <td class="stats-td-left stats-player-cell">
+                            <span class="logo-ring logo-ring--26" [style.--ring-bg]="getTeamRingBg(leaderboardFranchiseNameForLogo(r.teamShort, 'ipl'))">
+                              <img *ngIf="!isFallbackLogo(leaderboardFranchiseNameForLogo(r.teamShort, 'ipl'))" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(leaderboardFranchiseNameForLogo(r.teamShort, 'ipl'))" (error)="onTeamLogoError($event)" alt="" />
+                              <span *ngIf="isFallbackLogo(leaderboardFranchiseNameForLogo(r.teamShort, 'ipl'))" class="logo-inner logo-initial">{{ getInitials(r.name) }}</span>
+                            </span>
+                            <span class="stats-player-meta">
+                              <span class="stats-player-name">{{ r.name }}</span>
+                              <span class="stats-player-team">{{ r.teamShort }}</span>
+                            </span>
+                          </td>
+                          <td class="stats-primary-col">{{ r.wkts }}</td>
+                          <td>{{ r.mat }}</td>
+                          <td>{{ r.inns }}</td>
+                          <td>{{ r.overs }}</td>
+                          <td>{{ r.runsConc }}</td>
+                          <td>{{ r.bbi }}</td>
+                          <td>{{ r.avg | number:'1.2-2' }}</td>
+                          <td>{{ r.econ | number:'1.2-2' }}</td>
+                          <td>{{ r.sr | number:'1.2-2' }}</td>
+                          <td>{{ r.fourW }}</td>
+                          <td>{{ r.fiveW }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </ng-container>
+            <ng-template #pslStatsOrSoon>
+              <ng-container *ngIf="selectedLeagueType === 'psl'; else statsComingSoonGeneric">
+                <div class="stats-card">
+                  <div class="stats-card-title">Pakistan Super League — player stats</div>
+                  <div class="stats-season-pill">SEASON 2026 · Most runs &amp; most wickets</div>
+
+                  <div class="stats-section">
+                    <div class="stats-section-title">Most runs</div>
+                    <div class="stats-table-wrap">
+                      <table class="points-table stats-table stats-table--leaderboard">
+                        <thead>
+                          <tr>
+                            <th>POS</th>
+                            <th>Player</th>
+                            <th>Span</th>
+                            <th>Mat</th>
+                            <th>Inns</th>
+                            <th>NO</th>
+                            <th class="stats-primary-col">Runs</th>
+                            <th>HS</th>
+                            <th>Ave</th>
+                            <th>BF</th>
+                            <th>SR</th>
+                            <th>100</th>
+                            <th>50</th>
+                            <th>0</th>
+                            <th>4s</th>
+                            <th>6s</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr *ngFor="let r of pslMostRuns2026">
+                            <td>{{ r.pos }}</td>
+                            <td class="stats-td-left stats-player-cell">
+                              <span class="logo-ring logo-ring--26" [style.--ring-bg]="getTeamRingBg(leaderboardFranchiseNameForLogo(r.teamShort, 'psl'))">
+                                <img *ngIf="!isFallbackLogo(leaderboardFranchiseNameForLogo(r.teamShort, 'psl'))" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(leaderboardFranchiseNameForLogo(r.teamShort, 'psl'))" (error)="onTeamLogoError($event)" alt="" />
+                                <span *ngIf="isFallbackLogo(leaderboardFranchiseNameForLogo(r.teamShort, 'psl'))" class="logo-inner logo-initial">{{ getInitials(r.name) }}</span>
+                              </span>
+                              <span class="stats-player-meta">
+                                <span class="stats-player-name">{{ r.name }}</span>
+                                <span class="stats-player-team">{{ r.teamShort }}</span>
+                              </span>
+                            </td>
+                            <td>{{ r.span }}</td>
+                            <td>{{ r.mat }}</td>
+                            <td>{{ r.inns }}</td>
+                            <td>{{ r.notOut }}</td>
+                            <td class="stats-primary-col">{{ r.runs }}</td>
+                            <td>{{ r.hs }}</td>
+                            <td>{{ r.avg | number:'1.2-2' }}</td>
+                            <td>{{ r.bf }}</td>
+                            <td>{{ r.sr | number:'1.2-2' }}</td>
+                            <td>{{ r.hundreds }}</td>
+                            <td>{{ r.fifties }}</td>
+                            <td>{{ r.ducks }}</td>
+                            <td>{{ r.fours }}</td>
+                            <td>{{ r.sixes }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="stats-section">
+                    <div class="stats-section-title">Most wickets</div>
+                    <div class="stats-table-wrap">
+                      <table class="points-table stats-table stats-table--leaderboard">
+                        <thead>
+                          <tr>
+                            <th>POS</th>
+                            <th>Player</th>
+                            <th>Span</th>
+                            <th>Mat</th>
+                            <th>Inns</th>
+                            <th>Balls</th>
+                            <th>Overs</th>
+                            <th>Mdns</th>
+                            <th>Runs</th>
+                            <th class="stats-primary-col">Wkts</th>
+                            <th>BBI</th>
+                            <th>Ave</th>
+                            <th>Econ</th>
+                            <th>SR</th>
+                            <th>4</th>
+                            <th>5</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr *ngFor="let r of pslMostWickets2026">
+                            <td>{{ r.pos }}</td>
+                            <td class="stats-td-left stats-player-cell">
+                              <span class="logo-ring logo-ring--26" [style.--ring-bg]="getTeamRingBg(leaderboardFranchiseNameForLogo(r.teamShort, 'psl'))">
+                                <img *ngIf="!isFallbackLogo(leaderboardFranchiseNameForLogo(r.teamShort, 'psl'))" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(leaderboardFranchiseNameForLogo(r.teamShort, 'psl'))" (error)="onTeamLogoError($event)" alt="" />
+                                <span *ngIf="isFallbackLogo(leaderboardFranchiseNameForLogo(r.teamShort, 'psl'))" class="logo-inner logo-initial">{{ getInitials(r.name) }}</span>
+                              </span>
+                              <span class="stats-player-meta">
+                                <span class="stats-player-name">{{ r.name }}</span>
+                                <span class="stats-player-team">{{ r.teamShort }}</span>
+                              </span>
+                            </td>
+                            <td>{{ r.span }}</td>
+                            <td>{{ r.mat }}</td>
+                            <td>{{ r.inns }}</td>
+                            <td>{{ r.balls }}</td>
+                            <td>{{ r.overs }}</td>
+                            <td>{{ r.mdns }}</td>
+                            <td>{{ r.runsConc }}</td>
+                            <td class="stats-primary-col">{{ r.wkts }}</td>
+                            <td>{{ r.bbi }}</td>
+                            <td>{{ r.avg | number:'1.2-2' }}</td>
+                            <td>{{ r.econ | number:'1.2-2' }}</td>
+                            <td>{{ r.sr | number:'1.2-2' }}</td>
+                            <td>{{ r.fourW }}</td>
+                            <td>{{ r.fiveW }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </ng-container>
+            </ng-template>
+            <ng-template #statsComingSoonGeneric>
+              <div class="empty">Stats coming soon.</div>
+            </ng-template>
+          </ng-template>
+        </div>
+      </ng-container>
+
+      <!-- Default dashboard center content -->
+      <ng-template #defaultCenter>
       <div class="center-tabs">
         <button class="center-tab" [class.active]="activeTab === 'all'" (click)="applyFilter('all')" type="button">ALL</button>
         <button class="center-tab" [class.active]="activeTab === 'live'" (click)="applyFilter('live')" type="button">LIVE</button>
@@ -54,87 +1196,179 @@
         <button class="center-tab" [class.active]="activeTab === 'results'" (click)="applyFilter('results')" type="button">RESULTS</button>
       </div>
 
-      <!-- LIVE: show only live matches -->
-      <div class="match-list" *ngIf="activeTab === 'live'">
-        <div class="match-card" *ngFor="let match of getLiveMatchesVisible()" (click)="openLiveScorecard(match)" role="button" tabindex="0">
-          <div class="mc-team left">
-            <img *ngIf="!isFallbackLogo(match.team_home)" class="mc-logo" [src]="getTeamLogoUrl(match.team_home)" (error)="onTeamLogoError($event)" alt="" />
-            <div *ngIf="isFallbackLogo(match.team_home)" class="mc-logo mc-initial">{{ getInitials(match.team_home) }}</div>
-            <div class="mc-teamcode">{{ getDisplayTeamName(match.team_home) }}</div>
-          </div>
-
-          <div class="mc-mid">
-            <div class="mc-live-pill">Live</div>
-            <div class="mc-score">
-              <span class="mc-scoreline">{{ match.home_score || '-' }}</span>
-              <span class="mc-dash">-</span>
-              <span class="mc-scoreline">{{ match.away_score || '-' }}</span>
-            </div>
-            <div class="mc-status">{{ match.status }}</div>
-          </div>
-
-          <div class="mc-team right">
-            <div class="mc-teamcode right">{{ getDisplayTeamName(match.team_away) }}</div>
-            <img *ngIf="!isFallbackLogo(match.team_away)" class="mc-logo" [src]="getTeamLogoUrl(match.team_away)" (error)="onTeamLogoError($event)" alt="" />
-            <div *ngIf="isFallbackLogo(match.team_away)" class="mc-logo mc-initial">{{ getInitials(match.team_away) }}</div>
-          </div>
-        </div>
+      <!-- LIVE: ICC Men's T20 WC-style score cards (same as league World Cup view) -->
+      <div id="crex-live-matches-anchor" class="match-list" *ngIf="activeTab === 'live'" tabindex="-1">
+        <ng-container *ngFor="let match of getLiveMatchesVisible()">
+          <ng-container
+            *ngTemplateOutlet="
+              dashboardScoreUpCard;
+              context: { match: match, seriesName: '', isLiveFeed: true, liveWhenPrefix: true }
+            "
+          ></ng-container>
+        </ng-container>
 
         <div class="empty" *ngIf="!getLiveMatchesVisible().length">No live matches right now.</div>
       </div>
 
-      <!-- ALL/UPCOMING/RESULTS: show series matches + finished live results only (not live) -->
-      <div class="match-list" *ngIf="activeTab !== 'live'">
+      <!-- UPCOMING: use upcomingMatches only -->
+      <div class="match-list" *ngIf="activeTab === 'upcoming'">
+        <ng-container *ngIf="getUpcomingMatchesVisible().length; else noUpcoming">
+          <ng-container *ngFor="let grp of getUpcomingGroupedByDate()">
+            <div class="up-date">{{ grp.date }}</div>
+            <ng-container *ngFor="let g of grp.matches">
+              <div class="up-card">
+                <div class="up-top">
+                  <div class="up-venue-line">{{ g.venue || '' }}</div>
+                  <div class="up-when">{{ g.time_ist }}</div>
+                </div>
+                <div class="up-main">
+                  <div class="up-teamblock left">
+                    <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(g.team_home)">
+                      <img *ngIf="!isFallbackLogo(g.team_home)" class="logo-inner" [src]="getTeamLogoUrl(g.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(g.team_home)" class="logo-inner logo-initial">{{ getInitials(g.team_home) }}</span>
+                    </span>
+                    <div class="up-teamtext">{{ getDisplayTeamName(g.team_home) }}</div>
+                  </div>
+
+                  <div class="up-vs">Vs</div>
+
+                  <div class="up-teamblock right">
+                    <div class="up-teamtext right">{{ getDisplayTeamName(g.team_away) }}</div>
+                    <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(g.team_away)">
+                      <img *ngIf="!isFallbackLogo(g.team_away)" class="logo-inner" [src]="getTeamLogoUrl(g.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(g.team_away)" class="logo-inner logo-initial">{{ getInitials(g.team_away) }}</span>
+                    </span>
+                  </div>
+
+                  <button class="up-action" type="button" (click)="openMatchCentre(g, $event)">Match Centre</button>
+                </div>
+              </div>
+            </ng-container>
+          </ng-container>
+        </ng-container>
+        <ng-template #noUpcoming>
+          <div class="empty">No upcoming matches.</div>
+        </ng-template>
+      </div>
+
+      <!-- ALL/RESULTS: show series matches + finished live results only (not live) -->
+      <div class="match-list" *ngIf="activeTab !== 'live' && activeTab !== 'upcoming'">
         <div class="subpanel" *ngIf="getFinishedLiveResultsVisible().length">
           <div class="subpanel-title">Recent live results</div>
-          <div class="match-card" *ngFor="let match of getFinishedLiveResultsVisible()" (click)="openLiveScorecard(match)" role="button" tabindex="0">
-            <div class="mc-team left">
-              <img *ngIf="!isFallbackLogo(match.team_home)" class="mc-logo" [src]="getTeamLogoUrl(match.team_home)" (error)="onTeamLogoError($event)" alt="" />
-              <div *ngIf="isFallbackLogo(match.team_home)" class="mc-logo mc-initial">{{ getInitials(match.team_home) }}</div>
-              <div class="mc-teamcode">{{ getDisplayTeamName(match.team_home) }}</div>
-            </div>
-            <div class="mc-mid">
-              <div class="mc-score">
-                <span class="mc-scoreline">{{ match.home_score || '-' }}</span>
-                <span class="mc-dash">-</span>
-                <span class="mc-scoreline">{{ match.away_score || '-' }}</span>
-              </div>
-              <div class="mc-status">{{ match.status }}</div>
-            </div>
-            <div class="mc-team right">
-              <div class="mc-teamcode right">{{ getDisplayTeamName(match.team_away) }}</div>
-              <img *ngIf="!isFallbackLogo(match.team_away)" class="mc-logo" [src]="getTeamLogoUrl(match.team_away)" (error)="onTeamLogoError($event)" alt="" />
-              <div *ngIf="isFallbackLogo(match.team_away)" class="mc-logo mc-initial">{{ getInitials(match.team_away) }}</div>
-            </div>
-          </div>
+          <ng-container *ngFor="let match of getFinishedLiveResultsVisible()">
+            <ng-container
+              *ngTemplateOutlet="
+                dashboardScoreUpCard;
+                context: { match: match, seriesName: '', isLiveFeed: true, liveWhenPrefix: false }
+              "
+            ></ng-container>
+          </ng-container>
         </div>
 
         <ng-container *ngFor="let s of getVisibleSeries()">
           <div class="subpanel">
             <div class="subpanel-title">{{ s.name }}</div>
-            <div class="match-card" *ngFor="let match of s.matches" (click)="openScorecard(match)" role="button" tabindex="0">
-              <div class="mc-team left">
-                <img *ngIf="!isFallbackLogo(match.team_home)" class="mc-logo" [src]="getTeamLogoUrl(match.team_home)" (error)="onTeamLogoError($event)" alt="" />
-                <div *ngIf="isFallbackLogo(match.team_home)" class="mc-logo mc-initial">{{ getInitials(match.team_home) }}</div>
-                <div class="mc-teamcode">{{ getDisplayTeamName(match.team_home) }}</div>
-              </div>
-              <div class="mc-mid">
-                <div class="mc-score">
-                  <span class="mc-scoreline">{{ match.home_score || '-' }}</span>
-                  <span class="mc-dash">-</span>
-                  <span class="mc-scoreline">{{ match.away_score || '-' }}</span>
+
+            <ng-container *ngFor="let match of s.matches">
+              <ng-container *ngIf="isIccMensT20WorldCupSeries(s.name)">
+                <div
+                  class="up-card up-card--score up-card--large"
+                  (click)="openWorldCupMatchCentre(match)"
+                  role="button"
+                  tabindex="0"
+                >
+                  <div class="up-top">
+                    <div class="up-venue-line">{{ getWcMatchCardTitle(match) || match.name || '' }}</div>
+                    <div class="up-when">{{ getMatchDateFromScorecard(match) || match.status }}</div>
+                  </div>
+                  <div class="up-main up-main--score">
+                    <div class="up-teamblock left">
+                      <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(match.team_home)">
+                        <img *ngIf="!isFallbackLogo(match.team_home)" class="logo-inner" [src]="getTeamLogoUrl(match.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                        <span *ngIf="isFallbackLogo(match.team_home)" class="logo-inner logo-initial">{{ getInitials(match.team_home) }}</span>
+                      </span>
+                      <div class="up-teamstack">
+                        <div class="up-teamtext">{{ getDisplayTeamName(match.team_home) }}</div>
+                        <div class="up-scoreline">{{ match.home_score || getTeamScoreLineFromScorecard(match, match.team_home) || '-' }}</div>
+                        <div class="up-overs">{{ getTeamOversFromScorecard(match, match.team_home) }}</div>
+                      </div>
+                    </div>
+                    <div class="up-vs">Vs</div>
+                    <div class="up-teamblock right">
+                      <div class="up-teamstack right">
+                        <div class="up-teamtext right">{{ getDisplayTeamName(match.team_away) }}</div>
+                        <div class="up-scoreline right">{{ match.away_score || getTeamScoreLineFromScorecard(match, match.team_away) || '-' }}</div>
+                        <div class="up-overs right">{{ getTeamOversFromScorecard(match, match.team_away) }}</div>
+                      </div>
+                      <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(match.team_away)">
+                        <img *ngIf="!isFallbackLogo(match.team_away)" class="logo-inner" [src]="getTeamLogoUrl(match.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                        <span *ngIf="isFallbackLogo(match.team_away)" class="logo-inner logo-initial">{{ getInitials(match.team_away) }}</span>
+                      </span>
+                    </div>
+                    <div class="up-icons" (click)="$event.stopPropagation()">
+                      <span class="up-report-tipwrap">
+                        <button type="button" class="up-icbtn up-icbtn--grid up-icbtn--report" (click)="$event.stopPropagation(); openMatchReport(match, 'ICC Mens T20 World Cup 2026')" aria-label="Match Reports">▦</button>
+                      </span>
+                      <span class="up-report-tipwrap">
+                        <button type="button" class="up-icbtn up-icbtn--play" (click)="onWorldCupHighlightsClick(match, $event)" aria-label="Highlights">▶</button>
+                      </span>
+                    </div>
+                    <button class="up-action" type="button" (click)="$event.stopPropagation(); openWorldCupMatchCentre(match)">Match Centre</button>
+                  </div>
                 </div>
-                <div class="mc-status">{{ match.status }}</div>
+              </ng-container>
+
+
+              <ng-container *ngIf="!isIccMensT20WorldCupSeries(s.name) && (match.home_score || match.away_score)">
+                <ng-container
+                  *ngTemplateOutlet="
+                    dashboardScoreUpCard;
+                    context: { match: match, seriesName: s.name, isLiveFeed: false, liveWhenPrefix: false }
+                  "
+                ></ng-container>
+              </ng-container>
+
+              <!-- Default card -->
+              <div
+                class="match-card"
+                *ngIf="!isIccMensT20WorldCupSeries(s.name) && !(match.home_score || match.away_score)"
+                (click)="openScorecard(match)"
+                role="button"
+                tabindex="0"
+              >
+                <div class="mc-content">
+                  <div class="mc-team left">
+                  <span class="logo-ring logo-ring--34" [style.--ring-bg]="getTeamRingBg(match.team_home)">
+                    <img *ngIf="!isFallbackLogo(match.team_home)" class="logo-inner" [src]="getTeamLogoUrl(match.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                    <span *ngIf="isFallbackLogo(match.team_home)" class="logo-inner logo-initial">{{ getInitials(match.team_home) }}</span>
+                  </span>
+                    <div class="mc-teamcode">{{ getDisplayTeamName(match.team_home) }}</div>
+                  </div>
+                  <div class="mc-mid">
+                    <div class="mc-score">
+                      <span class="mc-scoreline">{{ match.home_score || '-' }}</span>
+                      <span class="mc-dash">-</span>
+                      <span class="mc-scoreline">{{ match.away_score || '-' }}</span>
+                    </div>
+                    <div class="mc-status">{{ match.status }}</div>
+                  </div>
+                  <div class="mc-team right">
+                    <div class="mc-teamcode right">{{ getDisplayTeamName(match.team_away) }}</div>
+                  <span class="logo-ring logo-ring--34" [style.--ring-bg]="getTeamRingBg(match.team_away)">
+                    <img *ngIf="!isFallbackLogo(match.team_away)" class="logo-inner" [src]="getTeamLogoUrl(match.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                    <span *ngIf="isFallbackLogo(match.team_away)" class="logo-inner logo-initial">{{ getInitials(match.team_away) }}</span>
+                  </span>
+                  </div>
+                </div>
+                <div class="mc-footer">
+                  {{ match.status }}
+                </div>
               </div>
-              <div class="mc-team right">
-                <div class="mc-teamcode right">{{ getDisplayTeamName(match.team_away) }}</div>
-                <img *ngIf="!isFallbackLogo(match.team_away)" class="mc-logo" [src]="getTeamLogoUrl(match.team_away)" (error)="onTeamLogoError($event)" alt="" />
-                <div *ngIf="isFallbackLogo(match.team_away)" class="mc-logo mc-initial">{{ getInitials(match.team_away) }}</div>
-              </div>
-            </div>
+            </ng-container>
           </div>
         </ng-container>
       </div>
+      </ng-template>
     </section>
 
     <!-- RIGHT: NEWS PANEL -->
@@ -153,35 +1387,1835 @@
     </aside>
   </main>
 
-  <!-- NEWS PAGE (header menu -> News) -->
-  <ng-template #newsPage>
-    <main class="crex-main news-page">
-      <section class="center news-center">
-        <section class="panel">
-          <div class="panel-title">News</div>
-          <a
-            class="news-row"
-            *ngFor="let n of newsItems"
-            [href]="n.link"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <img *ngIf="n.image_url" class="news-image" [src]="n.image_url" (error)="onTeamLogoError($event)" alt="" />
-            <div class="news-left">
-              <div class="news-title">{{ n.title }}</div>
-              <div class="news-meta">
-                <span class="news-source">{{ n.source }}</span>
-                <span class="news-dot">•</span>
-                <span class="news-date">{{ formatNewsDate(n.published_at) }}</span>
+  <ng-template #otherPage>
+    <ng-container *ngIf="headerPage === 'news'; else notNewsPage">
+      <!-- NEWS PAGE (header menu -> News) -->
+      <main class="crex-main news-page">
+        <section class="center news-center">
+          <section class="panel">
+            <div class="panel-title">News</div>
+            <a
+              class="news-row"
+              *ngFor="let n of newsItems"
+              [href]="n.link"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img *ngIf="n.image_url" class="news-image" [src]="n.image_url" (error)="onTeamLogoError($event)" alt="" />
+              <div class="news-left">
+                <div class="news-title">{{ n.title }}</div>
+                <div class="news-meta">
+                  <span class="news-source">{{ n.source }}</span>
+                  <span class="news-dot">•</span>
+                  <span class="news-date">{{ formatNewsDate(n.published_at) }}</span>
+                </div>
+                <div class="news-summary" *ngIf="n.summary">{{ n.summary }}</div>
               </div>
-              <div class="news-summary" *ngIf="n.summary">{{ n.summary }}</div>
+            </a>
+            <div class="empty" *ngIf="!newsItems.length">No news loaded.</div>
+          </section>
+        </section>
+      </main>
+    </ng-container>
+  </ng-template>
+
+  <ng-template #notNewsPage>
+    <ng-container *ngIf="headerPage === 'teams'; else notTeamsOrFixturesPage">
+      <!-- TEAMS PAGE -->
+      <main class="crex-main teams-page">
+        <section class="center teams-center">
+          <section class="panel">
+            <div class="panel-title">Teams</div>
+
+            <div class="teams-league-tabs">
+              <button
+                type="button"
+                class="teams-league-tab"
+                [class.active]="teamPageLeague === 'ipl'"
+                (click)="openTeamsLeague('ipl')"
+              >
+                <img class="teams-league-logo" src="assets/logos/ipl.png" alt="IPL" />
+                <span>IPL</span>
+              </button>
+              <button
+                type="button"
+                class="teams-league-tab"
+                [class.active]="teamPageLeague === 'psl'"
+                (click)="openTeamsLeague('psl')"
+              >
+                <img class="teams-league-logo" src="assets/logos/psl.png" alt="PSL" />
+                <span>PSL</span>
+              </button>
+              <button
+                type="button"
+                class="teams-league-tab"
+                [class.active]="teamPageLeague === 'bbl'"
+                (click)="openTeamsLeague('bbl')"
+              >
+                <img class="teams-league-logo" src="assets/logos/bbl.png" alt="BBL" />
+                <span>BBL</span>
+              </button>
             </div>
-          </a>
-          <div class="empty" *ngIf="!newsItems.length">No news loaded.</div>
+
+            <div class="teams-grid" *ngIf="teamPageLeague === 'ipl'">
+              <button
+                type="button"
+                class="team-card"
+                *ngFor="let t of getIplTeamsList()"
+                [class.active]="teamPageSelectedCode === t"
+                (click)="selectTeamForView(t)"
+              >
+                <span class="logo-ring logo-ring--34" [style.--ring-bg]="getTeamRingBg(t)">
+                  <img
+                    *ngIf="!isFallbackLogo(t)"
+                    class="logo-inner logo-inner--tight"
+                    [src]="getTeamLogoUrl(t)"
+                    (error)="onTeamLogoError($event)"
+                    alt=""
+                  />
+                  <span *ngIf="isFallbackLogo(t)" class="logo-inner logo-initial">{{ getInitials(t) }}</span>
+                </span>
+                <div class="team-card-name">{{ t }}</div>
+              </button>
+            </div>
+
+            <div class="teams-grid" *ngIf="teamPageLeague === 'psl'">
+              <button
+                type="button"
+                class="team-card"
+                *ngFor="let key of getPslTeamsList()"
+                [class.active]="teamPageSelectedCode === key"
+                (click)="selectTeamForView(key)"
+              >
+                <span class="logo-ring logo-ring--34" [style.--ring-bg]="getTeamRingBg(getPslTeamFullName(key))">
+                  <img
+                    *ngIf="!isFallbackLogo(getPslTeamFullName(key))"
+                    class="logo-inner logo-inner--tight"
+                    [src]="getTeamLogoUrl(getPslTeamFullName(key))"
+                    (error)="onTeamLogoError($event)"
+                    alt=""
+                  />
+                  <span *ngIf="isFallbackLogo(getPslTeamFullName(key))" class="logo-inner logo-initial">
+                    {{ getInitials(getPslTeamFullName(key)) }}
+                  </span>
+                </span>
+                <div class="team-card-name">{{ getPslTeamCodeDisplay(key) }}</div>
+                <div class="team-card-sub">{{ getPslTeamFullName(key) }}</div>
+              </button>
+            </div>
+
+            <div class="teams-grid" *ngIf="teamPageLeague === 'bbl'">
+              <button
+                type="button"
+                class="team-card"
+                *ngFor="let t of getBblTeamsList()"
+                [class.active]="teamPageSelectedCode === t"
+                (click)="selectTeamForView(t)"
+              >
+                <span class="logo-ring logo-ring--34" [style.--ring-bg]="getTeamRingBg(t)">
+                  <img
+                    *ngIf="!isFallbackLogo(t)"
+                    class="logo-inner logo-inner--tight"
+                    [src]="getTeamLogoUrl(t)"
+                    (error)="onTeamLogoError($event)"
+                    alt=""
+                  />
+                  <span *ngIf="isFallbackLogo(t)" class="logo-inner logo-initial">{{ getInitials(t) }}</span>
+                </span>
+                <div class="team-card-name">{{ t }}</div>
+              </button>
+            </div>
+
+            <ng-container *ngIf="teamPageSelectedCode as sel">
+              <div class="team-detail">
+                <div class="team-detail-head">
+                  <div class="team-detail-left">
+                    <span
+                      class="logo-ring logo-ring--34"
+                      [style.--ring-bg]="teamPageLeague === 'ipl' ? getTeamRingBg(sel) : teamPageLeague === 'psl' ? getTeamRingBg(getPslTeamFullName(sel)) : getTeamRingBg(sel)"
+                    >
+                      <img
+                        *ngIf="teamPageLeague === 'ipl' ? !isFallbackLogo(sel) : teamPageLeague === 'psl' ? !isFallbackLogo(getPslTeamFullName(sel)) : !isFallbackLogo(sel)"
+                        class="logo-inner logo-inner--tight"
+                        [src]="teamPageLeague === 'ipl' ? getTeamLogoUrl(sel) : teamPageLeague === 'psl' ? getTeamLogoUrl(getPslTeamFullName(sel)) : getTeamLogoUrl(sel)"
+                        (error)="onTeamLogoError($event)"
+                        alt=""
+                      />
+                      <span
+                        *ngIf="teamPageLeague === 'ipl' ? isFallbackLogo(sel) : teamPageLeague === 'psl' ? isFallbackLogo(getPslTeamFullName(sel)) : isFallbackLogo(sel)"
+                        class="logo-inner logo-initial"
+                      >
+                        {{ teamPageLeague === 'ipl' ? getInitials(sel) : teamPageLeague === 'psl' ? getInitials(getPslTeamFullName(sel)) : getInitials(sel) }}
+                      </span>
+                    </span>
+                    <div class="team-detail-text">
+                      <div class="team-detail-name">
+                        {{
+                          teamPageLeague === 'ipl'
+                            ? sel
+                            : teamPageLeague === 'psl'
+                              ? getPslTeamCodeDisplay(sel)
+                              : sel
+                        }}
+                      </div>
+                      <div class="team-detail-sub">
+                        {{
+                          teamPageLeague === 'ipl'
+                            ? 'Indian Premier League'
+                            : teamPageLeague === 'psl'
+                              ? getPslTeamFullName(sel)
+                              : 'Big Bash League'
+                        }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="team-detail-tabs">
+                    <button
+                      type="button"
+                      class="team-detail-tab"
+                      [class.active]="teamPageTab === 'matches'"
+                      (click)="setTeamPageTab('matches')"
+                    >
+                      Matches
+                    </button>
+                    <button
+                      type="button"
+                      class="team-detail-tab"
+                      [class.active]="teamPageTab === 'squad'"
+                      (click)="setTeamPageTab('squad')"
+                    >
+                      Squad
+                    </button>
+                  </div>
+                </div>
+
+                <div class="team-detail-body" *ngIf="teamPageTab === 'matches'">
+                  <div class="team-matches-list">
+                    <div class="up-date" *ngIf="getTeamPageCompletedLiveResults().length || getTeamPageCompletedSeriesMatches().length">Recent Results</div>
+                    <div
+                      class="up-card up-card--score up-card--large"
+                      *ngFor="let m of getTeamPageCompletedLiveResults()"
+                      (click)="openLiveFeedMatchCentre(m)"
+                      role="button"
+                      tabindex="0"
+                    >
+                      <div class="up-top">
+                        <div class="up-venue-line">{{ getDashboardLiveFeedCardTitle(m) }}</div>
+                        <div class="up-when">{{ getMatchDateFromScorecard(liveMatchAsMatch(m)) || m.status }}</div>
+                      </div>
+                      <div class="up-main up-main--score">
+                        <div class="up-teamblock left">
+                          <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(m.team_home)">
+                            <img *ngIf="!isFallbackLogo(m.team_home)" class="logo-inner" [src]="getTeamLogoUrl(m.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                            <span *ngIf="isFallbackLogo(m.team_home)" class="logo-inner logo-initial">{{ getInitials(m.team_home) }}</span>
+                          </span>
+                          <div class="up-teamstack">
+                            <div class="up-teamtext">{{ getDisplayTeamName(m.team_home) }}</div>
+                            <div class="up-scoreline">{{ m.home_score || getTeamScoreLineFromScorecard(liveMatchAsMatch(m), m.team_home) || '-' }}</div>
+                            <div class="up-overs">{{ getTeamOversFromScorecard(liveMatchAsMatch(m), m.team_home) }}</div>
+                          </div>
+                        </div>
+                        <div class="up-vs">Vs</div>
+                        <div class="up-teamblock right">
+                          <div class="up-teamstack right">
+                            <div class="up-teamtext right">{{ getDisplayTeamName(m.team_away) }}</div>
+                            <div class="up-scoreline right">{{ m.away_score || getTeamScoreLineFromScorecard(liveMatchAsMatch(m), m.team_away) || '-' }}</div>
+                            <div class="up-overs right">{{ getTeamOversFromScorecard(liveMatchAsMatch(m), m.team_away) }}</div>
+                          </div>
+                          <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(m.team_away)">
+                            <img *ngIf="!isFallbackLogo(m.team_away)" class="logo-inner" [src]="getTeamLogoUrl(m.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                            <span *ngIf="isFallbackLogo(m.team_away)" class="logo-inner logo-initial">{{ getInitials(m.team_away) }}</span>
+                          </span>
+                        </div>
+                        <button class="up-action" type="button" (click)="$event.stopPropagation(); openLiveFeedMatchCentre(m)">Match Centre</button>
+                      </div>
+                    </div>
+
+                    <div
+                      class="up-card up-card--score up-card--large"
+                      *ngFor="let m of getTeamPageCompletedSeriesMatches()"
+                      (click)="openTeamPageCompletedMatchCentre(m)"
+                      role="button"
+                      tabindex="0"
+                    >
+                      <div class="up-top">
+                        <div class="up-venue-line">{{ getSeriesScoreCardTitle(m, teamPageLeague === 'bbl' ? 'Big Bash League 2025-26' : teamPageLeague === 'ipl' ? getIplMasterSeriesLabel() : getPslMasterSeriesLabel()) }}</div>
+                        <div class="up-when">{{ getMatchDateFromScorecard(m) || m.status }}</div>
+                      </div>
+                      <div class="up-main up-main--score">
+                        <div class="up-teamblock left">
+                          <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(m.team_home)">
+                            <img *ngIf="!isFallbackLogo(m.team_home)" class="logo-inner" [src]="getTeamLogoUrl(m.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                            <span *ngIf="isFallbackLogo(m.team_home)" class="logo-inner logo-initial">{{ getInitials(m.team_home) }}</span>
+                          </span>
+                          <div class="up-teamstack">
+                            <div class="up-teamtext">{{ getDisplayTeamName(m.team_home) }}</div>
+                            <div class="up-scoreline">{{ m.home_score || getTeamScoreLineFromScorecard(m, m.team_home) || '-' }}</div>
+                            <div class="up-overs">{{ getTeamOversFromScorecard(m, m.team_home) }}</div>
+                          </div>
+                        </div>
+                        <div class="up-vs">Vs</div>
+                        <div class="up-teamblock right">
+                          <div class="up-teamstack right">
+                            <div class="up-teamtext right">{{ getDisplayTeamName(m.team_away) }}</div>
+                            <div class="up-scoreline right">{{ m.away_score || getTeamScoreLineFromScorecard(m, m.team_away) || '-' }}</div>
+                            <div class="up-overs right">{{ getTeamOversFromScorecard(m, m.team_away) }}</div>
+                          </div>
+                          <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(m.team_away)">
+                            <img *ngIf="!isFallbackLogo(m.team_away)" class="logo-inner" [src]="getTeamLogoUrl(m.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                            <span *ngIf="isFallbackLogo(m.team_away)" class="logo-inner logo-initial">{{ getInitials(m.team_away) }}</span>
+                          </span>
+                        </div>
+                        <button class="up-action" type="button" (click)="$event.stopPropagation(); openTeamPageCompletedMatchCentre(m)">Match Centre</button>
+                      </div>
+                    </div>
+
+                    <div class="up-date" *ngIf="getTeamPageFixtures().length">Upcoming Fixtures</div>
+                    <div class="empty" *ngIf="!getTeamPageFixtures().length && !getTeamPageCompletedLiveResults().length && !getTeamPageCompletedSeriesMatches().length">No matches for this team yet.</div>
+                    <div class="up-card" *ngFor="let g of getTeamPageFixtures()">
+                      <div class="up-top">
+                        <div class="up-venue-line">{{ g.venue || '' }}</div>
+                        <div class="up-when">{{ g.date_ist }} • {{ g.time_ist }}</div>
+                      </div>
+                      <div class="up-main">
+                        <div class="up-teamblock left">
+                          <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(g.team_home)">
+                            <img
+                              *ngIf="!isFallbackLogo(g.team_home)"
+                              class="logo-inner"
+                              [src]="getTeamLogoUrl(g.team_home)"
+                              (error)="onTeamLogoError($event)"
+                              alt=""
+                            />
+                            <span *ngIf="isFallbackLogo(g.team_home)" class="logo-inner logo-initial">
+                              {{ getInitials(g.team_home) }}
+                            </span>
+                          </span>
+                          <div class="up-teamtext">{{ getDisplayTeamName(g.team_home) }}</div>
+                        </div>
+
+                        <div class="up-vs">Vs</div>
+
+                        <div class="up-teamblock right">
+                          <div class="up-teamtext right">{{ getDisplayTeamName(g.team_away) }}</div>
+                          <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(g.team_away)">
+                            <img
+                              *ngIf="!isFallbackLogo(g.team_away)"
+                              class="logo-inner"
+                              [src]="getTeamLogoUrl(g.team_away)"
+                              (error)="onTeamLogoError($event)"
+                              alt=""
+                            />
+                            <span *ngIf="isFallbackLogo(g.team_away)" class="logo-inner logo-initial">
+                              {{ getInitials(g.team_away) }}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="team-detail-body" *ngIf="teamPageTab === 'squad'">
+                  <div class="empty" *ngIf="teamPageSquadLoading">Loading squad…</div>
+                  <div class="empty" *ngIf="!teamPageSquadLoading && !teamPageSquad">No squad data yet.</div>
+
+                  <ng-container *ngIf="teamPageSquad as sq">
+                    <div class="squad-wrap squad-wrap--single">
+                      <div class="squad-col">
+                        <div class="squad-section">
+                          <div class="squad-title">Batters</div>
+                          <div class="squad-grid">
+                            <div class="ply-card" *ngFor="let p of sq.batters">
+                              <img
+                                *ngIf="getCricbuzzPlayerImageUrl(p.imageId)"
+                                class="ply-img"
+                                [src]="getCricbuzzPlayerImageUrl(p.imageId)"
+                                (error)="onTeamLogoError($event)"
+                                alt=""
+                              />
+                              <div class="ply-meta">
+                                <div class="ply-name">{{ p.name }}</div>
+                                <div class="ply-role">Batter</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="squad-section">
+                          <div class="squad-title">All Rounders</div>
+                          <div class="squad-grid">
+                            <div class="ply-card" *ngFor="let p of sq.allrounders">
+                              <img
+                                *ngIf="getCricbuzzPlayerImageUrl(p.imageId)"
+                                class="ply-img"
+                                [src]="getCricbuzzPlayerImageUrl(p.imageId)"
+                                (error)="onTeamLogoError($event)"
+                                alt=""
+                              />
+                              <div class="ply-meta">
+                                <div class="ply-name">{{ p.name }}</div>
+                                <div class="ply-role">All Rounder</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="squad-section">
+                          <div class="squad-title">Bowlers</div>
+                          <div class="squad-grid">
+                            <div class="ply-card" *ngFor="let p of sq.bowlers">
+                              <img
+                                *ngIf="getCricbuzzPlayerImageUrl(p.imageId)"
+                                class="ply-img"
+                                [src]="getCricbuzzPlayerImageUrl(p.imageId)"
+                                (error)="onTeamLogoError($event)"
+                                alt=""
+                              />
+                              <div class="ply-meta">
+                                <div class="ply-name">{{ p.name }}</div>
+                                <div class="ply-role">Bowler</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </ng-container>
+                </div>
+              </div>
+            </ng-container>
+          </section>
+        </section>
+      </main>
+    </ng-container>
+
+    <ng-template #notTeamsPage>
+    <ng-container *ngIf="headerPage === 'matchcentre' || headerPage === 'matchreport'; else auctionOrRankingsPage">
+      <!-- MATCH CENTRE PAGE -->
+      <main class="crex-main matchcentre-page">
+        <section class="center matchcentre-center">
+          <ng-container *ngIf="headerPage === 'matchreport'">
+            <section class="matchcentre-shell" *ngIf="selectedWorldCupReport as rm; else matchReportEmpty">
+              <div class="mc-hero">
+                <div class="mc-hero-top mc-hero-top-page">
+                  <div class="mc-match-pill">MATCH</div>
+                  <button class="mc-back" type="button" (click)="closeMatchReport()">Back</button>
+                </div>
+
+                <div class="mc-hero-mid">
+                  <div class="mc-hero-team left">
+                    <span
+                      class="logo-ring logo-ring--34"
+                      [style.--ring-bg]="getTeamRingBg(rm.team_home) || 'rgba(30, 58, 138, 0.22)'"
+                    >
+                      <img *ngIf="!isFallbackLogo(rm.team_home)" class="logo-inner" [src]="getTeamLogoUrl(rm.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(rm.team_home)" class="logo-inner logo-initial">{{ getTeamCodeDisplay(rm.team_home) }}</span>
+                    </span>
+                    <div class="mc-hero-code">{{ getTeamCodeDisplay(rm.team_home) }}</div>
+                  </div>
+
+                  <div class="mc-hero-vs">
+                    <span class="mc-vs-badge">Vs</span>
+                  </div>
+
+                  <div class="mc-hero-team right">
+                    <div class="mc-hero-code">{{ getTeamCodeDisplay(rm.team_away) }}</div>
+                    <span
+                      class="logo-ring logo-ring--34"
+                      [style.--ring-bg]="getTeamRingBg(rm.team_away) || 'rgba(30, 58, 138, 0.22)'"
+                    >
+                      <img *ngIf="!isFallbackLogo(rm.team_away)" class="logo-inner" [src]="getTeamLogoUrl(rm.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(rm.team_away)" class="logo-inner logo-initial">{{ getTeamCodeDisplay(rm.team_away) }}</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div class="mc-hero-meta">
+                  <span class="mc-hero-meta-left">
+                    {{
+                      (matchReportData?.venue || getMatchVenueFromScorecard(rm) || rm.name || '').trim()
+                    }}
+                    •
+                    {{
+                      (matchReportData?.date || getMatchDateFromScorecard(rm) || rm.status || '').trim()
+                    }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="mc-body">
+                <div class="mc-section-title">Match Report</div>
+
+                <div class="scorecard-loading" *ngIf="matchReportLoading">Loading scorecard…</div>
+                <div class="scorecard-error" *ngIf="matchReportError && !matchReportLoading">{{ matchReportError }}</div>
+
+                <div class="scorecard-content" *ngIf="(matchReportData || matchReportEssayParagraphs?.length) && !matchReportLoading">
+                  <div class="matchreport-essay" *ngIf="matchReportEssayParagraphs?.length">
+                    <div class="matchreport-essay-title">{{ matchReportEssayTitle }}</div>
+                    <div class="matchreport-essay-date" *ngIf="matchReportEssayDateLine">{{ matchReportEssayDateLine }}</div>
+                    <div class="matchreport-essay-body">
+                      <p *ngFor="let p of matchReportEssayParagraphs">{{ p }}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <ng-template #matchReportEmpty>
+              <section class="panel">
+                <div class="empty">No match report selected.</div>
+              </section>
+            </ng-template>
+          </ng-container>
+
+          <ng-container *ngIf="headerPage === 'matchcentre'">
+            <section class="matchcentre-shell" *ngIf="selectedUpcoming as um; else matchCentreEmpty">
+              <div class="mc-hero">
+                <div class="mc-hero-top mc-hero-top-page">
+                  <div class="mc-match-pill">MATCH</div>
+                  <button class="mc-back" type="button" (click)="closeMatchCentre()">Back</button>
+                </div>
+
+                <div class="mc-hero-mid">
+                  <div class="mc-hero-team left">
+                    <span class="logo-ring logo-ring--34" [style.--ring-bg]="getTeamRingBg(um.team_home)">
+                      <img *ngIf="!isFallbackLogo(um.team_home)" class="logo-inner" [src]="getTeamLogoUrl(um.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(um.team_home)" class="logo-inner logo-initial">{{ getTeamCodeDisplay(um.team_home) }}</span>
+                    </span>
+                    <div class="mc-hero-code">{{ getTeamCodeDisplay(um.team_home) }}</div>
+                  </div>
+
+                  <div class="mc-hero-vs">
+                    <span class="mc-vs-badge">Vs</span>
+                  </div>
+
+                  <div class="mc-hero-team right">
+                    <div class="mc-hero-code">{{ getTeamCodeDisplay(um.team_away) }}</div>
+                    <span class="logo-ring logo-ring--34" [style.--ring-bg]="getTeamRingBg(um.team_away)">
+                      <img *ngIf="!isFallbackLogo(um.team_away)" class="logo-inner" [src]="getTeamLogoUrl(um.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                      <span *ngIf="isFallbackLogo(um.team_away)" class="logo-inner logo-initial">{{ getTeamCodeDisplay(um.team_away) }}</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div class="mc-countdown">
+                  <ng-container *ngIf="getMatchCentreCountdown() as cd">
+                    <div class="cd-box"><div class="cd-num">{{ pad2(cd.d) }}</div><div class="cd-lbl">days</div></div>
+                    <div class="cd-box"><div class="cd-num">{{ pad2(cd.h) }}</div><div class="cd-lbl">hrs</div></div>
+                    <div class="cd-box"><div class="cd-num">{{ pad2(cd.m) }}</div><div class="cd-lbl">mins</div></div>
+                    <div class="cd-box"><div class="cd-num">{{ pad2(cd.s) }}</div><div class="cd-lbl">secs</div></div>
+                  </ng-container>
+                </div>
+
+                <div class="mc-hero-meta">
+                  <span class="mc-hero-meta-left">{{ um.venue }} • {{ um.date_ist }} • {{ um.time_ist }}</span>
+                  <!-- Mini game removed -->
+                </div>
+              </div>
+
+              <div class="mc-body">
+                <div class="mc-tabs">
+                  <button type="button" class="mc-tab" [class.active]="matchCentreTab==='info'" (click)="setMatchCentreTab('info')">MATCH INFO</button>
+                  <button type="button" class="mc-tab" [class.active]="matchCentreTab==='squad'" (click)="setMatchCentreTab('squad')">SQUAD</button>
+                  <button
+                    *ngIf="isBblSeries(um.series_name) || isIccMensT20WorldCupSeries(um.series_name) || matchCentreAllowScorecardTab"
+                    type="button"
+                    class="mc-tab"
+                    [class.active]="matchCentreTab==='scorecard'"
+                    (click)="setMatchCentreTab('scorecard')"
+                  >
+                    SCORECARD
+                  </button>
+                  <button
+                    *ngIf="!matchCentreHideBuildXiTab"
+                    type="button"
+                    class="mc-tab"
+                    [class.active]="matchCentreTab==='buildxi'"
+                    (click)="setMatchCentreTab('buildxi')"
+                  >
+                    BUILD YOUR XI
+                  </button>
+                </div>
+
+                <div class="mc-panel" *ngIf="matchCentreTab==='info'">
+                  <div class="mc-section-title">Match Info</div>
+                  <div class="mc-info-card">
+                    <div class="mc-info-row">
+                      <div class="mc-info-key">Series</div>
+                      <div class="mc-info-val">{{ um.series_name }}</div>
+                    </div>
+                    <div class="mc-info-row">
+                      <div class="mc-info-key">Venue</div>
+                      <div class="mc-info-val">{{ um.venue }}</div>
+                    </div>
+                    <div class="mc-info-row">
+                      <div class="mc-info-key">Date</div>
+                      <div class="mc-info-val">
+                        {{
+                          (matchCentreScorecardData?.date || um.date_ist || '') + (um.time_ist ? ' • ' + um.time_ist : '')
+                        }}
+                      </div>
+                    </div>
+                    <div class="mc-info-row">
+                      <div class="mc-info-key">Result</div>
+                      <div class="mc-info-val">{{ getMatchInfoResult() }}</div>
+                    </div>
+                    <div class="mc-info-row" *ngIf="isBblSeries(um.series_name)">
+                      <div class="mc-info-key">Match Summary</div>
+                      <div class="mc-info-val">
+                        <button type="button" class="up-action" (click)="openBblMatchSummary($event)">Show Summary</button>
+                      </div>
+                    </div>
+                    <div class="mc-info-row" *ngIf="isIccMensT20WorldCupSeries(um.series_name)">
+                      <div class="mc-info-key">Match Summary</div>
+                      <div class="mc-info-val">
+                        <button type="button" class="up-action" (click)="openWorldCupMatchSummary($event)">Show Summary</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="wc-final-winner" *ngIf="getWorldCupFinalWinnerTeam() as winner">
+                    <div class="wc-final-winner-label">WINNER</div>
+                    <div class="wc-final-winner-team">{{ winner }}</div>
+                  </div>
+
+                  <ng-container *ngIf="!isBblSeries(um.series_name) && !isIccMensT20WorldCupSeries(um.series_name)">
+                  <div class="mc-section-title" style="margin-top:16px;">Team Comparison <span style="font-weight:700; opacity:.7;">(Last 10 matches)</span></div>
+                  <div class="mc-compare-card">
+                    <div class="mc-compare-top">
+                      <div class="mc-compare-side">
+                        <div class="mc-compare-code">{{ getTeamCodeDisplay(um.team_home) }}</div>
+                        <div class="mc-compare-sub">vs all teams</div>
+                      </div>
+                      <div class="mc-compare-toggle">
+                        <button type="button" class="mc-mini-tab active">Overall</button>
+                      </div>
+                      <div class="mc-compare-side right">
+                        <div class="mc-compare-code">{{ getTeamCodeDisplay(um.team_away) }}</div>
+                        <div class="mc-compare-sub">vs all teams</div>
+                      </div>
+                    </div>
+
+                    <div class="mc-compare-loading" *ngIf="matchCentreComparisonLoading">Loading…</div>
+                    <div class="mc-compare-loading" *ngIf="!matchCentreComparisonLoading && (!matchCentreTeamA || !matchCentreTeamB)">No comparison data yet.</div>
+
+                    <ng-container *ngIf="matchCentreTeamA as ta">
+                      <ng-container *ngIf="matchCentreTeamB as tb">
+                        <div class="mc-compare-row">
+                          <div class="mc-compare-val">{{ ta.matches_played }}</div>
+                          <div class="mc-compare-key">Matches Played</div>
+                          <div class="mc-compare-val right">{{ tb.matches_played }}</div>
+                        </div>
+                        <div class="mc-compare-row">
+                          <div class="mc-compare-val" [ngClass]="getWinColorClass(ta.win_pct)">{{ ta.win_pct }}%</div>
+                          <div class="mc-compare-key">Win</div>
+                          <div class="mc-compare-val right" [ngClass]="getWinColorClass(tb.win_pct)">{{ tb.win_pct }}%</div>
+                        </div>
+                        <div class="mc-compare-row">
+                          <div class="mc-compare-val">{{ ta.avg_score }}</div>
+                          <div class="mc-compare-key">Avg Score</div>
+                          <div class="mc-compare-val right">{{ tb.avg_score }}</div>
+                        </div>
+                        <div class="mc-compare-row">
+                          <div class="mc-compare-val" [ngClass]="getHighestColorClass(ta.highest_score)">{{ ta.highest_score }}</div>
+                          <div class="mc-compare-key">Highest Score</div>
+                          <div class="mc-compare-val right" [ngClass]="getHighestColorClass(tb.highest_score)">{{ tb.highest_score }}</div>
+                        </div>
+                        <div class="mc-compare-row">
+                          <div class="mc-compare-val" [ngClass]="getLowestColorClass(ta.lowest_score)">{{ ta.lowest_score }}</div>
+                          <div class="mc-compare-key">Lowest Score</div>
+                          <div class="mc-compare-val right" [ngClass]="getLowestColorClass(tb.lowest_score)">{{ tb.lowest_score }}</div>
+                        </div>
+                      </ng-container>
+                    </ng-container>
+                  </div>
+
+                  <div class="form-block">
+                    <div class="form-title">Team Form <span class="form-sub">(Last 5 matches)</span></div>
+                    <div class="form-loading" *ngIf="matchCentreFormLoading">Loading…</div>
+                    <div class="form-loading" *ngIf="!matchCentreFormLoading && (!matchCentreFormA || !matchCentreFormB)">No form data yet.</div>
+
+                    <ng-container *ngIf="matchCentreFormA as fa">
+                      <div class="form-row">
+                        <div class="form-left">
+                          <span class="logo-ring logo-ring--22" [style.--ring-bg]="getTeamRingBg(um.team_home)">
+                            <img *ngIf="!isFallbackLogo(um.team_home)" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(um.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                            <span *ngIf="isFallbackLogo(um.team_home)" class="logo-inner logo-initial">{{ getTeamCodeDisplay(um.team_home) }}</span>
+                          </span>
+                          <div class="form-teamname">{{ getDisplayTeamName(um.team_home) }}</div>
+                        </div>
+                        <div class="form-pills">
+                          <span class="form-pill neutral">*</span>
+                          <ng-container *ngIf="getFormChars(fa.form).length; else naFormA">
+                            <span *ngFor="let ch of getFormChars(fa.form)" class="form-pill" [class.win]="ch==='W'" [class.loss]="ch==='L'">{{ ch }}</span>
+                          </ng-container>
+                          <ng-template #naFormA>
+                            <span class="form-pill neutral">N/A</span>
+                          </ng-template>
+                        </div>
+                      </div>
+                    </ng-container>
+
+                    <ng-container *ngIf="matchCentreFormB as fb">
+                      <div class="form-row">
+                        <div class="form-left">
+                          <span class="logo-ring logo-ring--22" [style.--ring-bg]="getTeamRingBg(um.team_away)">
+                            <img *ngIf="!isFallbackLogo(um.team_away)" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(um.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                            <span *ngIf="isFallbackLogo(um.team_away)" class="logo-inner logo-initial">{{ getTeamCodeDisplay(um.team_away) }}</span>
+                          </span>
+                          <div class="form-teamname">{{ getDisplayTeamName(um.team_away) }}</div>
+                        </div>
+                        <div class="form-pills">
+                          <span class="form-pill neutral">*</span>
+                          <ng-container *ngIf="getFormChars(fb.form).length; else naFormB">
+                            <span *ngFor="let ch of getFormChars(fb.form)" class="form-pill" [class.win]="ch==='W'" [class.loss]="ch==='L'">{{ ch }}</span>
+                          </ng-container>
+                          <ng-template #naFormB>
+                            <span class="form-pill neutral">N/A</span>
+                          </ng-template>
+                        </div>
+                      </div>
+                    </ng-container>
+                  </div>
+
+                  <div class="h2h-compact">
+                    <div class="h2h-title">
+                      Head to Head <span class="h2h-sub" *ngIf="matchCentreH2H as h">(Last {{ h.played }} matches)</span>
+                    </div>
+
+                    <div class="h2h-loading" *ngIf="matchCentreH2HLoading">Loading…</div>
+                    <div class="h2h-loading" *ngIf="!matchCentreH2HLoading && !matchCentreH2H">No head-to-head data yet.</div>
+
+                    <div class="h2h-compact-card" *ngIf="matchCentreH2H as h">
+                      <div class="h2h-side">
+                        <span class="logo-ring logo-ring--34" [style.--ring-bg]="getTeamRingBg(um.team_home)">
+                          <img *ngIf="!isFallbackLogo(um.team_home)" class="logo-inner" [src]="getTeamLogoUrl(um.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                          <span *ngIf="isFallbackLogo(um.team_home)" class="logo-inner logo-initial">{{ getTeamCodeDisplay(um.team_home) }}</span>
+                        </span>
+                        <div class="h2h-code">{{ getTeamCodeDisplay(um.team_home) }}</div>
+                      </div>
+
+                      <div class="h2h-score">
+                        <span class="h2h-score-a" [style.color]="getTeamAccentColor(um.team_home)">{{ h.won_a }}</span>
+                        <span class="h2h-score-dash">-</span>
+                        <span class="h2h-score-b" [style.color]="getTeamAccentColor(um.team_away)">{{ h.won_b }}</span>
+                      </div>
+
+                      <div class="h2h-side right">
+                        <div class="h2h-code">{{ getTeamCodeDisplay(um.team_away) }}</div>
+                        <span class="logo-ring logo-ring--34" [style.--ring-bg]="getTeamRingBg(um.team_away)">
+                          <img *ngIf="!isFallbackLogo(um.team_away)" class="logo-inner" [src]="getTeamLogoUrl(um.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                          <span *ngIf="isFallbackLogo(um.team_away)" class="logo-inner logo-initial">{{ getTeamCodeDisplay(um.team_away) }}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  </ng-container>
+                </div>
+
+                <div class="mc-panel" *ngIf="matchCentreTab==='squad'">
+                  <div class="mc-section-title">Squad</div>
+                  <div class="empty" *ngIf="matchCentreSquadLoading">Loading squads…</div>
+                  <div class="empty" *ngIf="!matchCentreSquadLoading && (!matchCentreSquadA || !matchCentreSquadB)">No squad data yet.</div>
+
+                  <ng-container *ngIf="matchCentreSquadA as sa">
+                    <ng-container *ngIf="matchCentreSquadB as sb">
+                      <div class="squad-wrap">
+                        <div class="squad-col">
+                          <div class="squad-teamhead">
+                            <span class="logo-ring logo-ring--22" [style.--ring-bg]="getTeamRingBg(um.team_home)">
+                              <img *ngIf="!isFallbackLogo(um.team_home)" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(um.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                              <span *ngIf="isFallbackLogo(um.team_home)" class="logo-inner logo-initial">{{ getTeamCodeDisplay(um.team_home) }}</span>
+                            </span>
+                            <div class="squad-teamname">{{ getDisplayTeamName(um.team_home) }}</div>
+                          </div>
+
+                          <div class="squad-section">
+                            <div class="squad-title">Batters</div>
+                            <div class="squad-grid">
+                              <div class="ply-card" *ngFor="let p of sa.batters">
+                                <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                                <div class="ply-meta">
+                                  <div class="ply-name">{{ p.name }}</div>
+                                  <div class="ply-role">Batter</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="squad-section">
+                            <div class="squad-title">All Rounders</div>
+                            <div class="squad-grid">
+                              <div class="ply-card" *ngFor="let p of sa.allrounders">
+                                <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                                <div class="ply-meta">
+                                  <div class="ply-name">{{ p.name }}</div>
+                                  <div class="ply-role">All Rounder</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="squad-section">
+                            <div class="squad-title">Bowlers</div>
+                            <div class="squad-grid">
+                              <div class="ply-card" *ngFor="let p of sa.bowlers">
+                                <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                                <div class="ply-meta">
+                                  <div class="ply-name">{{ p.name }}</div>
+                                  <div class="ply-role">Bowler</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="squad-col">
+                          <div class="squad-teamhead">
+                            <span class="logo-ring logo-ring--22" [style.--ring-bg]="getTeamRingBg(um.team_away)">
+                              <img *ngIf="!isFallbackLogo(um.team_away)" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(um.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                              <span *ngIf="isFallbackLogo(um.team_away)" class="logo-inner logo-initial">{{ getTeamCodeDisplay(um.team_away) }}</span>
+                            </span>
+                            <div class="squad-teamname">{{ getDisplayTeamName(um.team_away) }}</div>
+                          </div>
+
+                          <div class="squad-section">
+                            <div class="squad-title">Batters</div>
+                            <div class="squad-grid">
+                              <div class="ply-card" *ngFor="let p of sb.batters">
+                                <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                                <div class="ply-meta">
+                                  <div class="ply-name">{{ p.name }}</div>
+                                  <div class="ply-role">Batter</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="squad-section">
+                            <div class="squad-title">All Rounders</div>
+                            <div class="squad-grid">
+                              <div class="ply-card" *ngFor="let p of sb.allrounders">
+                                <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                                <div class="ply-meta">
+                                  <div class="ply-name">{{ p.name }}</div>
+                                  <div class="ply-role">All Rounder</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="squad-section">
+                            <div class="squad-title">Bowlers</div>
+                            <div class="squad-grid">
+                              <div class="ply-card" *ngFor="let p of sb.bowlers">
+                                <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                                <div class="ply-meta">
+                                  <div class="ply-name">{{ p.name }}</div>
+                                  <div class="ply-role">Bowler</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </ng-container>
+                  </ng-container>
+                </div>
+              </div>
+            <div class="mc-panel" *ngIf="matchCentreTab==='scorecard'">
+              <div class="bbl-scorecard">
+                <div class="bbl-scorecard-title">Scorecard</div>
+                <div class="bbl-final-winner" *ngIf="getBblFinalWinnerTeam() as winner">
+                  <div class="bbl-final-winner-label">WINNER</div>
+                  <div class="bbl-final-winner-team">{{ winner }}</div>
+                </div>
+                <div class="bbl-match-header">{{ getBblMatchHeader() }}</div>
+
+                <div class="scorecard-loading" *ngIf="matchCentreScorecardLoading">Loading scorecard…</div>
+                <div class="scorecard-error" *ngIf="matchCentreScorecardError && !matchCentreScorecardLoading">{{ matchCentreScorecardError }}</div>
+
+                <div class="bbl-scorecard-body" *ngIf="matchCentreScorecardData && !matchCentreScorecardLoading">
+                  <div class="bbl-scoreboard">
+                    <div
+                      class="bbl-team-box"
+                      *ngFor="let s of (matchCentreScorecardData.score || []).slice(0, 2); let i = index"
+                      (click)="selectBblInnings(i)"
+                      [class.active]="i === matchCentreSelectedBblInningsIdx"
+                      role="button"
+                      tabindex="0"
+                    >
+                      <div class="bbl-team-name">{{ getBblTeamLabel(s.inning) }}</div>
+                      <div class="bbl-team-total">
+                        {{ s.r }}-{{ s.w }} <span class="bbl-team-overs">({{ formatBblOvers(s.o) }})</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div *ngIf="matchCentreScorecardData.scorecard?.length; else bblNoInnings">
+                    <ng-container *ngIf="matchCentreScorecardData.scorecard?.[matchCentreSelectedBblInningsIdx] as inn">
+                      <div class="bbl-score-section">BATTING</div>
+
+                      <div class="bbl-innings-title">{{ inn.inning }}</div>
+
+                      <div class="table-wrap">
+                        <table class="bbl-score-table">
+                          <thead>
+                            <tr>
+                              <th class="col-batter">Batter</th>
+                              <th class="col-r">R</th>
+                              <th class="col-b">B</th>
+                              <th class="col-4s">4s</th>
+                              <th class="col-6s">6s</th>
+                              <th class="col-sr">SR</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr *ngFor="let b of inn.batting">
+                              <td class="bbl-batter-cell">
+                                <div class="bbl-batter-name">
+                                  <span>{{ b.batsman?.name }}</span>
+                                  <span class="bbl-batter-arrow">⌄</span>
+                                </div>
+                                <div class="bbl-batter-dismissal">
+                                  {{ b['dismissal-text'] || (b.dismissal ? b.dismissal : '') }}
+                                </div>
+                              </td>
+                              <td class="bbl-cell-num">{{ b.r }}</td>
+                              <td class="bbl-cell-num">{{ b.b }}</td>
+                              <td class="bbl-cell-num">{{ b['4s'] }}</td>
+                              <td class="bbl-cell-num">{{ b['6s'] }}</td>
+                              <td class="bbl-cell-num">{{ b.sr }}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div class="bbl-score-section bbl-score-section--bowling">BOWLING</div>
+
+                      <div class="table-wrap">
+                        <table class="bbl-score-table">
+                          <thead>
+                            <tr>
+                              <th class="col-bowler">Bowler</th>
+                              <th class="col-o">O</th>
+                              <th class="col-m">M</th>
+                              <th class="col-r">R</th>
+                              <th class="col-w">W</th>
+                              <th class="col-er">ER</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr *ngFor="let b of inn.bowling">
+                              <td class="bbl-batter-cell">
+                                <div class="bbl-batter-name">
+                                  <span>{{ b.bowler?.name }}</span>
+                                  <span class="bbl-batter-arrow">⌄</span>
+                                </div>
+                              </td>
+                              <td class="bbl-cell-num">{{ b.o }}</td>
+                              <td class="bbl-cell-num">{{ b.m }}</td>
+                              <td class="bbl-cell-num">{{ b.r }}</td>
+                              <td class="bbl-cell-num">{{ b.w }}</td>
+                              <td class="bbl-cell-num">{{ b.eco }}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div class="bbl-score-section bbl-score-section--fow" *ngIf="getBblFallOfWickets(inn)?.length">
+                        FALL OF WICKETS
+                      </div>
+
+                      <div class="table-wrap" *ngIf="getBblFallOfWickets(inn)?.length">
+                        <table class="bbl-score-table">
+                          <thead>
+                            <tr>
+                              <th>Batsman</th>
+                              <th>Score</th>
+                              <th>Overs</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr *ngFor="let f of getBblFallOfWickets(inn)">
+                              <td class="bbl-batter-cell">{{ f.batsman || f.player || f.name }}</td>
+                              <td class="bbl-cell-num">{{ f.score }}</td>
+                              <td class="bbl-cell-num">{{ f.overs }}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </ng-container>
+                  </div>
+
+                  <ng-template #bblNoInnings>
+                    <div class="empty">No scorecard innings found.</div>
+                  </ng-template>
+                </div>
+              </div>
+            </div>
+
+            <div class="mc-panel" *ngIf="matchCentreTab==='buildxi' && !matchCentreHideBuildXiTab">
+              <div class="mc-section-title">Build Your XI</div>
+
+              <div class="buildxi-summary">
+                <div class="buildxi-row">
+                  <div class="buildxi-k">Selected</div>
+                  <div class="buildxi-v">{{ getXIStats().total }}/11</div>
+                </div>
+                <div class="buildxi-row">
+                  <div class="buildxi-k">Bowlers</div>
+                  <div class="buildxi-v">{{ getXIStats().bowls }}/5</div>
+                </div>
+                <div class="buildxi-row">
+                  <div class="buildxi-k">Captain</div>
+                  <div class="buildxi-v">{{ matchCentreXICaptainKey ? 1 : 0 }}/1</div>
+                </div>
+                <div class="buildxi-row">
+                  <div class="buildxi-k">WK</div>
+                  <div class="buildxi-v">{{ matchCentreXIWkKey ? 1 : 0 }}/1</div>
+                </div>
+              </div>
+
+              <div class="buildxi-msg" *ngIf="matchCentreXIError">{{ matchCentreXIError }}</div>
+              <div class="buildxi-msg buildxi-msg--ok" *ngIf="!matchCentreXIError && matchCentreXIMsg">{{ matchCentreXIMsg }}</div>
+
+              <div class="buildxi-selected">
+                <div class="buildxi-selected-title">Playing XI</div>
+                <div class="buildxi-selected-wrap">
+                  <div class="buildxi-chip" *ngFor="let s of matchCentreXISelected">
+                    <div class="buildxi-chip-name">{{ getTeamCodeDisplay(s.team === 'A' ? um.team_home : um.team_away) }}</div>
+                    <div class="buildxi-chip-player">{{ s.player.name }}</div>
+                    <div class="buildxi-chip-actions">
+                      <button
+                        type="button"
+                        class="buildxi-chip-mini"
+                        [class.buildxi-chip-mini--active]="isCaptain(s.team, s.category, s.player)"
+                        (click)="chooseCaptain(s.team, s.category, s.player)"
+                      >C</button>
+                      <button
+                        type="button"
+                        class="buildxi-chip-mini"
+                        [disabled]="s.category !== 'batters'"
+                        [class.buildxi-chip-mini--active]="isWK(s.team, s.category, s.player)"
+                        (click)="chooseWK(s.team, s.category, s.player)"
+                      >WK</button>
+                      <button type="button" class="buildxi-chip-x" (click)="toggleXIPlayer(s.team, s.category, s.player)" aria-label="Remove">×</button>
+                    </div>
+                  </div>
+                  <div class="buildxi-selected-empty" *ngIf="matchCentreXISelected.length === 0">Select players from both teams below.</div>
+                </div>
+              </div>
+
+              <div class="buildxi-impact" *ngIf="!matchCentreXIFantasyConfirmed && isIplUpcomingMatch(um)">
+                <div class="buildxi-impact-title">Impact Player (IPL)</div>
+                <div class="buildxi-impact-sub">Optional. Must be different from the Playing XI.</div>
+                <div class="buildxi-impact-current" *ngIf="getImpactLabel()">{{ getImpactLabel() }}</div>
+                <div class="buildxi-impact-actions">
+                  <button type="button" class="buildxi-impact-clear" (click)="clearImpact()" [disabled]="!matchCentreXIImpactKey">Clear</button>
+                </div>
+              </div>
+
+              <div class="buildxi-picker" *ngIf="!matchCentreXIFantasyConfirmed">
+                <div class="buildxi-picker-col">
+                  <div class="buildxi-teamhead">
+                    <span class="logo-ring logo-ring--22" [style.--ring-bg]="getTeamRingBg(um.team_home)"></span>
+                    <div class="buildxi-teamname">{{ getTeamCodeDisplay(um.team_home) }}</div>
+                  </div>
+
+                  <div class="buildxi-section">
+                    <div class="buildxi-stitle">Batters</div>
+                    <div class="squad-grid">
+                      <div
+                        class="ply-card ply-card--selectable"
+                        *ngFor="let p of (matchCentreSquadA?.batters || [])"
+                        [class.ply-card--selected]="isXISelected('A','batters',p)"
+                        (click)="toggleXIPlayer('A','batters',p)"
+                      >
+                        <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                        <div class="ply-meta">
+                          <div class="ply-name">{{ p.name }}</div>
+                          <div class="ply-role">BAT</div>
+                          <div class="ply-actions" *ngIf="isIplUpcomingMatch(um)" (click)="$event.stopPropagation()">
+                            <button type="button" class="ply-mini" (click)="chooseImpact('A','batters',p)">Impact</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="buildxi-section">
+                    <div class="buildxi-stitle">All Rounders</div>
+                    <div class="squad-grid">
+                      <div
+                        class="ply-card ply-card--selectable"
+                        *ngFor="let p of (matchCentreSquadA?.allrounders || [])"
+                        [class.ply-card--selected]="isXISelected('A','allrounders',p)"
+                        (click)="toggleXIPlayer('A','allrounders',p)"
+                      >
+                        <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                        <div class="ply-meta">
+                          <div class="ply-name">{{ p.name }}</div>
+                          <div class="ply-role">AR</div>
+                          <div class="ply-actions" *ngIf="isIplUpcomingMatch(um)" (click)="$event.stopPropagation()">
+                            <button type="button" class="ply-mini" (click)="chooseImpact('A','allrounders',p)">Impact</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="buildxi-section">
+                    <div class="buildxi-stitle">Bowlers</div>
+                    <div class="squad-grid">
+                      <div
+                        class="ply-card ply-card--selectable"
+                        *ngFor="let p of (matchCentreSquadA?.bowlers || [])"
+                        [class.ply-card--selected]="isXISelected('A','bowlers',p)"
+                        (click)="toggleXIPlayer('A','bowlers',p)"
+                      >
+                        <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                        <div class="ply-meta">
+                          <div class="ply-name">{{ p.name }}</div>
+                          <div class="ply-role">BOW</div>
+                          <div class="ply-actions" *ngIf="isIplUpcomingMatch(um)" (click)="$event.stopPropagation()">
+                            <button type="button" class="ply-mini" (click)="chooseImpact('A','bowlers',p)">Impact</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="buildxi-picker-col">
+                  <div class="buildxi-teamhead">
+                    <span class="logo-ring logo-ring--22" [style.--ring-bg]="getTeamRingBg(um.team_away)"></span>
+                    <div class="buildxi-teamname">{{ getTeamCodeDisplay(um.team_away) }}</div>
+                  </div>
+
+                  <div class="buildxi-section">
+                    <div class="buildxi-stitle">Batters</div>
+                    <div class="squad-grid">
+                      <div
+                        class="ply-card ply-card--selectable"
+                        *ngFor="let p of (matchCentreSquadB?.batters || [])"
+                        [class.ply-card--selected]="isXISelected('B','batters',p)"
+                        (click)="toggleXIPlayer('B','batters',p)"
+                      >
+                        <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                        <div class="ply-meta">
+                          <div class="ply-name">{{ p.name }}</div>
+                          <div class="ply-role">BAT</div>
+                          <div class="ply-actions" *ngIf="isIplUpcomingMatch(um)" (click)="$event.stopPropagation()">
+                            <button type="button" class="ply-mini" (click)="chooseImpact('B','batters',p)">Impact</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="buildxi-section">
+                    <div class="buildxi-stitle">All Rounders</div>
+                    <div class="squad-grid">
+                      <div
+                        class="ply-card ply-card--selectable"
+                        *ngFor="let p of (matchCentreSquadB?.allrounders || [])"
+                        [class.ply-card--selected]="isXISelected('B','allrounders',p)"
+                        (click)="toggleXIPlayer('B','allrounders',p)"
+                      >
+                        <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                        <div class="ply-meta">
+                          <div class="ply-name">{{ p.name }}</div>
+                          <div class="ply-role">AR</div>
+                          <div class="ply-actions" *ngIf="isIplUpcomingMatch(um)" (click)="$event.stopPropagation()">
+                            <button type="button" class="ply-mini" (click)="chooseImpact('B','allrounders',p)">Impact</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="buildxi-section">
+                    <div class="buildxi-stitle">Bowlers</div>
+                    <div class="squad-grid">
+                      <div
+                        class="ply-card ply-card--selectable"
+                        *ngFor="let p of (matchCentreSquadB?.bowlers || [])"
+                        [class.ply-card--selected]="isXISelected('B','bowlers',p)"
+                        (click)="toggleXIPlayer('B','bowlers',p)"
+                      >
+                        <img *ngIf="getCricbuzzPlayerImageUrl(p.imageId)" class="ply-img" [src]="getCricbuzzPlayerImageUrl(p.imageId)" (error)="onTeamLogoError($event)" alt="" />
+                        <div class="ply-meta">
+                          <div class="ply-name">{{ p.name }}</div>
+                          <div class="ply-role">BOW</div>
+                          <div class="ply-actions" *ngIf="isIplUpcomingMatch(um)" (click)="$event.stopPropagation()">
+                            <button type="button" class="ply-mini" (click)="chooseImpact('B','bowlers',p)">Impact</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="buildxi-actions" *ngIf="!matchCentreXIFantasyConfirmed">
+                <button
+                  type="button"
+                  class="up-action"
+                  (click)="confirmXI()"
+                  [disabled]="getXIStats().total !== 11"
+                >Confirm XI</button>
+              </div>
+
+              <div class="fantasyxi-wrap" *ngIf="matchCentreXIFantasyConfirmed">
+                <div id="fantasyXI-capture" class="fantasyxi-template">
+                  <div class="fantasyxi-head">
+                    <div class="fantasyxi-title">FANTASY XI</div>
+                    <div class="fantasyxi-teams">
+                      {{ getTeamCodeDisplay(um.team_home) }} Vs {{ getTeamCodeDisplay(um.team_away) }}
+                    </div>
+                    <button type="button" class="fantasyxi-close" (click)="backToEditXI()" aria-label="Close">×</button>
+                  </div>
+
+                  <div class="fantasyxi-row">
+                    <div class="fantasyxi-player" *ngFor="let s of matchCentreXISelected | slice:0:6">
+                      <div class="fantasyxi-badges">
+                        <span class="fantasyxi-badge fantasyxi-badge--c" *ngIf="isCaptain(s.team, s.category, s.player)">C</span>
+                        <span class="fantasyxi-badge fantasyxi-badge--wk" *ngIf="isWK(s.team, s.category, s.player)">WK</span>
+                      </div>
+                      <div class="fantasyxi-imgwrap">
+                        <img
+                          *ngIf="getCricbuzzPlayerImageUrl(s.player.imageId)"
+                          class="fantasyxi-img"
+                          [src]="getCricbuzzPlayerImageUrl(s.player.imageId)"
+                          (error)="onTeamLogoError($event)"
+                          alt=""
+                        />
+                        <div class="fantasyxi-img-fallback" *ngIf="!getCricbuzzPlayerImageUrl(s.player.imageId)">
+                          {{ getInitials(s.player.name || '') }}
+                        </div>
+                      </div>
+                      <div class="fantasyxi-name">{{ s.player.name }}</div>
+                    </div>
+                  </div>
+
+                  <div class="fantasyxi-row fantasyxi-row--bottom">
+                    <div class="fantasyxi-player" *ngFor="let s of matchCentreXISelected | slice:6:11">
+                      <div class="fantasyxi-badges">
+                        <span class="fantasyxi-badge fantasyxi-badge--c" *ngIf="isCaptain(s.team, s.category, s.player)">C</span>
+                        <span class="fantasyxi-badge fantasyxi-badge--wk" *ngIf="isWK(s.team, s.category, s.player)">WK</span>
+                      </div>
+                      <div class="fantasyxi-imgwrap">
+                        <img
+                          *ngIf="getCricbuzzPlayerImageUrl(s.player.imageId)"
+                          class="fantasyxi-img"
+                          [src]="getCricbuzzPlayerImageUrl(s.player.imageId)"
+                          (error)="onTeamLogoError($event)"
+                          alt=""
+                        />
+                        <div class="fantasyxi-img-fallback" *ngIf="!getCricbuzzPlayerImageUrl(s.player.imageId)">
+                          {{ getInitials(s.player.name || '') }}
+                        </div>
+                      </div>
+                      <div class="fantasyxi-name">{{ s.player.name }}</div>
+                    </div>
+                  </div>
+
+                  <div class="fantasyxi-impactline" *ngIf="isIplUpcomingMatch(um) && matchCentreXIImpactKey">
+                    <span class="fantasyxi-impactlbl">Impact</span>
+                    <span class="fantasyxi-impactval">{{ getImpactLabel() }}</span>
+                  </div>
+                </div>
+
+                <div class="fantasyxi-actions">
+                  <button type="button" class="up-action" (click)="takeFantasyXIScreenshot()" [disabled]="matchCentreXIScreenshotLoading">
+                    {{ matchCentreXIScreenshotLoading ? 'Capturing...' : 'Take Screenshot' }}
+                  </button>
+                  <button type="button" class="up-action up-action--ghost" (click)="closeFantasyXI()">Close</button>
+                  <button type="button" class="up-action up-action--ghost" (click)="backToEditXI()">Edit</button>
+                </div>
+              </div>
+            </div>
+
+              <div class="modal-overlay" *ngIf="bblSummaryModalOpen" (click)="closeBblMatchSummary()">
+                <div class="scorecard-modal bbl-summary-modal" (click)="$event.stopPropagation()">
+                  <button class="modal-close" (click)="closeBblMatchSummary()" aria-label="Close">×</button>
+                  <div class="bbl-summary-title">MATCH SUMMARY</div>
+                  <div class="empty" *ngIf="matchCentreScorecardLoading">Loading summary...</div>
+                  <div class="empty" *ngIf="!matchCentreScorecardLoading && !getBblSummaryRows().length">Summary not available.</div>
+
+                  <div class="bbl-summary-body" *ngIf="!matchCentreScorecardLoading && getBblSummaryRows().length">
+                    <div class="bbl-summary-row" *ngFor="let r of getBblSummaryRows()">
+                      <div class="bbl-summary-head" [style.--team-ring]="getTeamRingBg(r.logoTeam)">
+                        <div class="bbl-summary-team" [style.background]="getTeamRingBg(r.logoTeam)">
+                          <span class="logo-ring logo-ring--26" [style.--ring-bg]="getTeamRingBg(r.logoTeam)">
+                            <img *ngIf="!isFallbackLogo(r.logoTeam)" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(r.logoTeam)" (error)="onTeamLogoError($event)" alt="" />
+                            <span *ngIf="isFallbackLogo(r.logoTeam)" class="logo-inner logo-initial">{{ getInitials(r.logoTeam) }}</span>
+                          </span>
+                          <span>{{ r.team }}</span>
+                        </div>
+                        <div class="bbl-summary-ov">{{ r.overs }} overs</div>
+                        <div class="bbl-summary-score" [style.background]="getTeamRingBg(r.logoTeam)">{{ r.score }}</div>
+                      </div>
+                      <div class="bbl-summary-cols">
+                        <div class="bbl-summary-col bbl-summary-col--bat">
+                          <div class="bbl-summary-line" *ngFor="let b of r.batters">
+                            <span class="bbl-summary-name">{{ b.name }}</span>
+                            <span class="bbl-summary-valbox" [style.background]="getTeamRingBg(r.logoTeam)">{{ b.value }}</span>
+                          </div>
+                        </div>
+                        <div class="bbl-summary-col bbl-summary-col--bowl">
+                          <div class="bbl-summary-line" *ngFor="let b of r.bowlers">
+                            <span class="bbl-summary-name">{{ b.name }}</span>
+                            <span class="bbl-summary-valbox" [style.background]="getTeamRingBg(r.logoTeam)">{{ b.value }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="bbl-summary-result">{{ selectedUpcoming?.status }}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal-overlay" *ngIf="wcSummaryModalOpen" (click)="closeWorldCupMatchSummary()">
+                <div class="scorecard-modal wc-summary-modal" (click)="$event.stopPropagation()">
+                  <button class="modal-close" (click)="closeWorldCupMatchSummary()" aria-label="Close">×</button>
+
+                  <div class="wc-summary-top">
+                    <div class="wc-summary-title">MATCH SUMMARY</div>                  
+                  </div>
+
+                  <div class="empty" *ngIf="matchCentreScorecardLoading">Loading summary...</div>
+                  <div class="empty" *ngIf="!matchCentreScorecardLoading && !getWcSummarySides().length">Summary not available.</div>
+
+                  <div class="wc-summary-board" *ngIf="!matchCentreScorecardLoading && getWcSummarySides() as sides">
+                    <div class="wc-teambar" *ngIf="sides.length >= 2">
+                      <div class="wc-teambar-team left">{{ sides[0].team }}</div>
+                      <div class="wc-teambar-center">
+                        <img class="wc-summary-center-logo" src="assets/logos/icct20white.png" alt="ICC Men's T20 World Cup" />
+                      </div>
+                      <div class="wc-teambar-team right">{{ sides[1].team }}</div>
+                    </div>
+                    <div class="wc-summary-venue">{{ selectedUpcoming?.venue }}</div>
+
+                    <div class="wc-summary-grid">
+                      <div class="wc-side" *ngFor="let s of sides">
+                        <div class="wc-side-scorebar">
+                          <span class="wc-side-score">{{ s.score }}</span>
+                        </div>
+                        <div class="wc-side-bat">
+                          <div class="wc-line" *ngFor="let b of s.batters">
+                            <span>{{ b.name }}</span>
+                            <span class="wc-num">{{ b.runs }}</span>
+                            <span class="wc-ball">{{ b.balls }}</span>
+                          </div>
+                        </div>
+                        <div class="wc-side-overs">{{ s.overs }}</div>
+                        <div class="wc-side-bowl">
+                          <div class="wc-line" *ngFor="let b of s.bowlers">
+                            <span>{{ b.name }}</span>
+                            <span class="wc-num">{{ b.fig }}</span>
+                            <span class="wc-ball">{{ b.overs }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="wc-summary-result">{{ getMatchInfoResult() | uppercase }}</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <ng-template #matchCentreEmpty>
+              <section class="panel">
+                <div class="empty">Open an upcoming match and click Match Centre.</div>
+              </section>
+            </ng-template>
+          </ng-container>
+        </section>
+      </main>
+    </ng-container>
+    </ng-template>
+
+  <ng-template #auctionOrRankingsPage>
+    <ng-container *ngIf="headerPage === 'auction'; else rankingsPage">
+      <main class="crex-main auction-page auction-ipl-page">
+        <div class="auction-ipl-bid-toast-stack" *ngIf="auctionBidToasts.length" aria-live="polite">
+          <div class="auction-ipl-bid-toast" *ngFor="let t of auctionBidToasts">{{ t.message }}</div>
+        </div>
+        <div class="auction-ipl-layout">
+          <!-- Sidebar: player pool preview -->
+          <aside class="auction-ipl-sidebar">
+            <div class="auction-ipl-sidebar-head">
+              <h2 class="auction-ipl-sidebar-title">
+                {{ hasAuctionSessionPlayerList() ? 'Auction pool' : 'Available players' }}
+                <span class="auction-ipl-sidebar-tag">{{
+                  hasAuctionSessionPlayerList() ? '(full roster)' : '(preview)'
+                }}</span>
+              </h2>
+              <div class="auction-ipl-tabs" [class.auction-ipl-tabs--four]="hasAuctionSessionPlayerList()">
+                <button
+                  type="button"
+                  class="auction-ipl-tab"
+                  [class.active]="auctionPlayerTab === 'bat'"
+                  (click)="setAuctionPlayerTab('bat')"
+                >
+                  Batters
+                </button>
+                <button
+                  type="button"
+                  class="auction-ipl-tab"
+                  [class.active]="auctionPlayerTab === 'bowl'"
+                  (click)="setAuctionPlayerTab('bowl')"
+                >
+                  Bowlers
+                </button>
+                <button
+                  type="button"
+                  class="auction-ipl-tab"
+                  [class.active]="auctionPlayerTab === 'ar'"
+                  (click)="setAuctionPlayerTab('ar')"
+                >
+                  All-rounders
+                </button>
+                <button
+                  type="button"
+                  class="auction-ipl-tab auction-ipl-tab--unsold"
+                  *ngIf="hasAuctionSessionPlayerList()"
+                  [class.active]="auctionPlayerTab === 'unsold'"
+                  (click)="setAuctionPlayerTab('unsold')"
+                >
+                  Unsold ({{ getAuctionUnsoldCount() }})
+                </button>
+              </div>
+            </div>
+            <div class="auction-ipl-player-list">
+              <div class="auction-ipl-preview-loading" *ngIf="auctionPreviewLoading && !hasAuctionSessionPlayerList()">Loading pool…</div>
+              <div class="auction-ipl-preview-err" *ngIf="auctionPreviewError && !hasAuctionSessionPlayerList()">{{ auctionPreviewError }}</div>
+              <div
+                class="auction-ipl-preview-loading"
+                *ngIf="
+                  auctionSessionId &&
+                  auctionState &&
+                  !hasAuctionSessionPlayerList() &&
+                  !auctionPreviewLoading &&
+                  getFilteredAuctionSidebarPlayers().length === 0
+                "
+              >
+                No player list yet — check that the API is running, or tap Reset session.
+              </div>
+              <div
+                class="auction-ipl-preview-loading auction-ipl-unsold-empty"
+                *ngIf="
+                  auctionPlayerTab === 'unsold' &&
+                  getAuctionUnsoldCount() === 0 &&
+                  hasAuctionSessionPlayerList()
+                "
+              >
+                <ng-container [ngSwitch]="auctionState?.status">
+                  <span *ngSwitchCase="'setup'">Start the auction — unsold players will appear here after each lot.</span>
+                  <span *ngSwitchCase="'finished'">No players went unsold.</span>
+                  <span *ngSwitchDefault>No unsold players yet.</span>
+                </ng-container>
+              </div>
+              <div
+                class="auction-ipl-player-row"
+                *ngFor="let pl of getFilteredAuctionSidebarPlayers()"
+                [class.auction-ipl-player-row--sold]="$any(pl).status === 'sold'"
+                [class.auction-ipl-player-row--unsold]="$any(pl).status === 'unsold'"
+              >
+                <img
+                  class="auction-ipl-player-avatar"
+                  [src]="auctionPlayerAvatarUrl($any(pl).name)"
+                  [alt]="''"
+                  width="44"
+                  height="44"
+                  loading="lazy"
+                />
+                <div class="auction-ipl-player-meta">
+                  <div class="auction-ipl-player-name">{{ $any(pl).name }}</div>
+                  <div class="auction-ipl-player-sub">{{ auctionPlayerSubtitle(pl) }}</div>
+                </div>
+                <div class="auction-ipl-player-price">{{ formatAuctionBaseCr($any(pl).base_price_lakhs) }}</div>
+              </div>
+            </div>
+          </aside>
+
+          <!-- Main -->
+          <div class="auction-ipl-main">
+            <div class="auction-ipl-topbar">
+              <div class="auction-ipl-league-switch" *ngIf="!auctionSessionId">
+                <button type="button" class="auction-ipl-league-btn" [class.active]="auctionLeague === 'ipl'" (click)="switchAuctionLeague('ipl')">IPL</button>
+                <button type="button" class="auction-ipl-league-btn" [class.active]="auctionLeague === 'psl'" (click)="switchAuctionLeague('psl')">PSL</button>
+              </div>
+              <span class="auction-ipl-league-locked" *ngIf="auctionSessionId">{{ auctionLeague === 'ipl' ? 'IPL' : 'PSL' }}</span>
+              <p class="auction-ipl-meta" *ngIf="auctionState?.rules as ar">
+                ₹{{ ar.budget_crores }} Cr · Squad {{ ar.min_squad }}–{{ ar.max_squad }} · Base {{ ar.player_base_min_lakhs }}L–{{ ar.player_base_max_lakhs }}L
+              </p>
+              <p class="auction-ipl-meta" *ngIf="!auctionState?.rules">₹50 Cr · Squad 14–18 · Base ₹30L–₹2 Cr</p>
+            </div>
+
+            <div class="scorecard-error auction-ipl-error" *ngIf="auctionError">{{ auctionError }}</div>
+
+            <!-- Loading session (avoid misleading franchise grid vs stored session) -->
+            <div class="auction-ipl-session-loading" *ngIf="isAuctionSessionStateLoading()">
+              <p>Loading auction…</p>
+            </div>
+
+            <!-- Pick franchise + confirm (no session yet) -->
+            <ng-container *ngIf="isAuctionFranchisePickPhase()">
+              <header class="auction-ipl-main-head">
+                <h1 class="auction-ipl-main-title auction-ipl-main-title--selection">Team selection</h1>
+                <p class="auction-ipl-main-desc">Select a team to manage their bidding and view their live status.</p>
+              </header>
+
+              <div
+                class="auction-ipl-team-grid"
+                [class.auction-ipl-team-grid--psl]="auctionLeague === 'psl'"
+              >
+                <button
+                  type="button"
+                  class="auction-ipl-team-card"
+                  *ngFor="let fr of getAuctionFranchises(); trackBy: trackByAuctionFranchiseCode"
+                  [class.selected]="auctionTeamCode === fr.code"
+                  [ngClass]="'auction-ipl-card--' + fr.accent"
+                  (click)="selectAuctionTeamCode(fr.code)"
+                >
+                  <div class="auction-ipl-team-card-inner">
+                    <div class="auction-ipl-logo-wrap" [ngClass]="'auction-ipl-logo-wrap--' + fr.accent">
+                      <img class="auction-ipl-team-logo" [src]="getFranchiseLogoUrl(fr.name)" [alt]="fr.name" loading="lazy" />
+                    </div>
+                    <span class="auction-ipl-team-name">{{ fr.name }}</span>
+                  </div>
+                </button>
+              </div>
+
+              <div class="auction-ipl-confirm-wrap">
+                <button
+                  type="button"
+                  class="auction-ipl-btn-confirm"
+                  [disabled]="auctionCreating"
+                  (click)="createMiniAuctionSession()"
+                >
+                  Confirm selection
+                </button>
+                <p class="auction-ipl-confirm-hint">You will become the admin for this team for the auction.</p>
+              </div>
+            </ng-container>
+
+            <!-- Session created, waiting for Start (no re-pick — server team is fixed) -->
+            <ng-container *ngIf="isAuctionPendingStartPhase()">
+              <header class="auction-ipl-main-head">
+                <h1 class="auction-ipl-main-title auction-ipl-main-title--selection">Ready to start</h1>
+                <p class="auction-ipl-main-desc">
+                  You're managing <strong>{{ getUserAuctionTeamLabel() }}</strong>. Use Reset session to pick a different franchise.
+                </p>
+              </header>
+              <div class="auction-ipl-pending-hero" [ngClass]="'auction-ipl-card--' + accentForUserAuctionTeam()">
+                <div class="auction-ipl-pending-hero-inner">
+                  <div class="auction-ipl-logo-wrap auction-ipl-pending-logo" [ngClass]="'auction-ipl-logo-wrap--' + accentForUserAuctionTeam()">
+                    <img
+                      class="auction-ipl-team-logo"
+                      [src]="getFranchiseLogoUrl(getUserAuctionTeamFullName())"
+                      [alt]="getUserAuctionTeamFullName() || getUserAuctionTeamLabel()"
+                      loading="lazy"
+                    />
+                  </div>
+                  <p class="auction-ipl-pending-hero-title">{{ getUserAuctionTeamLabel() }}</p>
+                  <p class="auction-ipl-pending-hero-hint">
+                    Browse the <strong>player pool</strong> in the sidebar, then tap
+                    <strong>Start auction</strong>.
+                  </p>
+                </div>
+              </div>
+              <div class="auction-ipl-confirm-wrap">
+                <div class="auction-ipl-post-actions auction-ipl-post-actions--solo">
+                  <button type="button" class="auction-ipl-btn-start" [disabled]="auctionLoading" (click)="beginMiniAuction()">Start auction</button>
+                  <button type="button" class="auction-ipl-btn-text" (click)="resetMiniAuctionSession()">Reset session</button>
+                </div>
+              </div>
+            </ng-container>
+
+            <!-- Live / paused / finished -->
+            <div class="auction-ipl-live" *ngIf="auctionState && isAuctionLiveOrPausedView()">
+              <div class="auction-ipl-live-head">
+                <div class="auction-ipl-live-head-row">
+                  <span
+                    class="auction-ipl-badge"
+                    [class.auction-ipl-badge--run]="auctionState.status === 'running'"
+                    [class.auction-ipl-badge--pause]="auctionState.status === 'paused'"
+                    >{{ auctionState.status }}</span
+                  >
+                  <span class="auction-ipl-live-meta" *ngIf="auctionState.rules"
+                    >Budget {{ auctionState.rules.budget_crores }} Cr · Next bid +10L / +25L / +50L steps<span
+                      *ngIf="auctionState.rules.auction_window_size != null"
+                    >
+                      
+                    </span
+                    ></span
+                  >
+                </div>
+                <div class="auction-ipl-live-actions">
+                  <button
+                    type="button"
+                    class="auction-ipl-btn-stop"
+                    *ngIf="auctionState.status === 'running'"
+                    (click)="stopMiniAuction()"
+                    [disabled]="auctionControlLoading"
+                  >
+                    Stop auction
+                  </button>
+                  <button
+                    type="button"
+                    class="auction-ipl-btn-resume"
+                    *ngIf="auctionState.status === 'paused'"
+                    (click)="resumeMiniAuction()"
+                    [disabled]="auctionControlLoading"
+                  >
+                    Resume
+                  </button>
+                  <button
+                    type="button"
+                    class="auction-ipl-btn-restart"
+                    *ngIf="auctionState.status === 'running' || auctionState.status === 'paused' || auctionState.status === 'finished'"
+                    (click)="restartMiniAuction()"
+                    [disabled]="auctionControlLoading"
+                  >
+                    Restart auction
+                  </button>
+                </div>
+              </div>
+
+              <div class="auction-ipl-lot" *ngIf="auctionState.current_lot as lot">
+                <div class="auction-ipl-lot-kicker">Current player</div>
+                <div class="auction-ipl-lot-name">{{ $any(lot.player)?.name }}</div>
+                <div class="auction-ipl-lot-cat">{{ $any(lot.player)?.category }} · Base {{ formatAuctionBaseCr($any(lot.player)?.base_price_lakhs) }}</div>
+                <div class="auction-ipl-paused-banner" *ngIf="lot.paused || auctionState.status === 'paused'">Auction paused — resume to continue bidding.</div>
+                <div class="auction-ipl-lot-bid">
+                  Current: ₹{{ lot.current_bid_lakhs }}L → Next: <strong>₹{{ lot.next_bid_lakhs }}L</strong>
+                </div>
+                <div class="auction-ipl-timer" *ngIf="lot.seconds_left != null && auctionState.status === 'running'">⏱ {{ lot.seconds_left }}s</div>
+                <button
+                  type="button"
+                  class="auction-ipl-btn-bid"
+                  (click)="placeMiniAuctionBid()"
+                  [disabled]="auctionState.status !== 'running' || lot.highest_bidder_id === auctionState.user_team_id || lot.paused === true"
+                >
+                  Bid ₹{{ lot.next_bid_lakhs }}L
+                </button>
+              </div>
+
+              <div class="auction-ipl-finished" *ngIf="auctionState.status === 'finished'">
+                <p>Auction complete.</p>
+                <p class="auction-ipl-finished-hint" *ngIf="getAuctionUnsoldCount() > 0">
+                  {{ getAuctionUnsoldCount() }} player(s) went unsold — open the <strong>Unsold</strong> tab in the sidebar or see the list below.
+                </p>
+              </div>
+
+              <div class="auction-ipl-squads">
+                <div
+                  class="auction-ipl-squad"
+                  *ngFor="let t of auctionState.teams"
+                  [ngClass]="'auction-ipl-card--' + auctionSquadAccent(t.short_code)"
+                >
+                  <div class="auction-ipl-squad-head">
+                    <strong>{{ t.short_code }}</strong>
+                    <span>₹{{ t.budget_crores }} Cr · {{ t.squad_count }} players</span>
+                  </div>
+                  <div class="auction-ipl-squad-list">
+                    <span *ngFor="let pl of (auctionState.squads?.[t.id] || [])" class="auction-ipl-chip">{{ $any(pl).name }} (₹{{ $any(pl).sold_price_lakhs }}L)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="auction-ipl-unsold-panel" *ngIf="auctionState.status === 'finished' && getAuctionUnsoldCount() > 0">
+                <h3 class="auction-ipl-unsold-title">Unsold players ({{ getAuctionUnsoldCount() }})</h3>
+                <div class="auction-ipl-unsold-grid">
+                  <span *ngFor="let u of getAuctionUnsoldPlayers()" class="auction-ipl-chip auction-ipl-chip--unsold">
+                    {{ $any(u).name }} · Base {{ formatAuctionBaseCr($any(u).base_price_lakhs) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </ng-container>
+  </ng-template>
+
+  <ng-template #notTeamsOrFixturesPage>
+    <ng-container *ngIf="headerPage === 'fixtures'; else notTeamsPage">
+      <!-- FIXTURES PAGE -->
+      <main class="crex-main fixtures-page">
+        <section class="center fixtures-center">
+          <section class="panel">
+            <div class="panel-title">Upcoming Fixtures</div>
+
+            <div class="fixtures-section">
+              <div class="fixtures-section-title">
+                <img class="fixtures-league-logo" src="assets/logos/ipl.png" alt="IPL" />
+                <span>Indian Premier League</span>
+              </div>
+              <div class="fixtures-list" *ngIf="getIplFixtures().length; else noIplFixtures">
+                <div class="up-card" *ngFor="let g of getIplFixtures()">
+                  <div class="up-top">
+                    <div class="up-venue-line">{{ g.venue || '' }}</div>
+                    <div class="up-when">{{ g.date_ist }} • {{ g.time_ist }}</div>
+                  </div>
+                  <div class="up-main">
+                    <div class="up-teamblock left">
+                      <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(g.team_home)">
+                        <img *ngIf="!isFallbackLogo(g.team_home)" class="logo-inner" [src]="getTeamLogoUrl(g.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                        <span *ngIf="isFallbackLogo(g.team_home)" class="logo-inner logo-initial">{{ getInitials(g.team_home) }}</span>
+                      </span>
+                      <div class="up-teamtext">{{ getDisplayTeamName(g.team_home) }}</div>
+                    </div>
+                    <div class="up-vs">Vs</div>
+                    <div class="up-teamblock right">
+                      <div class="up-teamtext right">{{ getDisplayTeamName(g.team_away) }}</div>
+                      <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(g.team_away)">
+                        <img *ngIf="!isFallbackLogo(g.team_away)" class="logo-inner" [src]="getTeamLogoUrl(g.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                        <span *ngIf="isFallbackLogo(g.team_away)" class="logo-inner logo-initial">{{ getInitials(g.team_away) }}</span>
+                      </span>
+                    </div>
+                    <button class="up-action" type="button" (click)="openMatchCentre(g, $event)">Match Centre</button>
+                  </div>
+                </div>
+              </div>
+              <ng-template #noIplFixtures>
+                <div class="empty">No upcoming IPL fixtures.</div>
+              </ng-template>
+            </div>
+
+            <div class="fixtures-section">
+              <div class="fixtures-section-title">
+                <img class="fixtures-league-logo" src="assets/logos/psl.png" alt="PSL" />
+                <span>Pakistan Super League</span>
+              </div>
+              <div class="fixtures-list" *ngIf="getPslFixtures().length; else noPslFixtures">
+                <div class="up-card" *ngFor="let g of getPslFixtures()">
+                  <div class="up-top">
+                    <div class="up-venue-line">{{ g.venue || '' }}</div>
+                    <div class="up-when">{{ g.date_ist }} • {{ g.time_ist }}</div>
+                  </div>
+                  <div class="up-main">
+                    <div class="up-teamblock left">
+                      <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(g.team_home)">
+                        <img *ngIf="!isFallbackLogo(g.team_home)" class="logo-inner" [src]="getTeamLogoUrl(g.team_home)" (error)="onTeamLogoError($event)" alt="" />
+                        <span *ngIf="isFallbackLogo(g.team_home)" class="logo-inner logo-initial">{{ getInitials(g.team_home) }}</span>
+                      </span>
+                      <div class="up-teamtext">{{ getDisplayTeamName(g.team_home) }}</div>
+                    </div>
+                    <div class="up-vs">Vs</div>
+                    <div class="up-teamblock right">
+                      <div class="up-teamtext right">{{ getDisplayTeamName(g.team_away) }}</div>
+                      <span class="logo-ring logo-ring--32" [style.--ring-bg]="getTeamRingBg(g.team_away)">
+                        <img *ngIf="!isFallbackLogo(g.team_away)" class="logo-inner" [src]="getTeamLogoUrl(g.team_away)" (error)="onTeamLogoError($event)" alt="" />
+                        <span *ngIf="isFallbackLogo(g.team_away)" class="logo-inner logo-initial">{{ getInitials(g.team_away) }}</span>
+                      </span>
+                    </div>
+                    <button class="up-action" type="button" (click)="openMatchCentre(g, $event)">Match Centre</button>
+                  </div>
+                </div>
+              </div>
+              <ng-template #noPslFixtures>
+                <div class="empty">No upcoming PSL fixtures.</div>
+              </ng-template>
+            </div>
+          </section>
+        </section>
+      </main>
+    </ng-container>
+  </ng-template>
+  </ng-template>
+
+  <!-- RANKINGS PAGE -->
+  <ng-template #rankingsPage>
+    <main class="crex-main rankings-page">
+      <section class="center rankings-center">
+        <div class="rank-tabs">
+          <button class="rank-tab" [class.active]="headerSubTab==='team'" (click)="openRankingsTab('team')" type="button">Team</button>
+          <button class="rank-tab" [class.active]="headerSubTab==='batter'" (click)="openRankingsTab('batter')" type="button">Batter</button>
+          <button class="rank-tab" [class.active]="headerSubTab==='bowler'" (click)="openRankingsTab('bowler')" type="button">Bowler</button>
+          <button class="rank-tab" [class.active]="headerSubTab==='allrounder'" (click)="openRankingsTab('allrounder')" type="button">All Rounder</button>
+        </div>
+
+        <section class="panel">
+          <div class="rank-title">{{ getRankingsTitle() }}</div>
+          <div class="rank-fetched muted" *ngIf="getRankingsFetchedAt()">Last updated: {{ getRankingsFetchedAt() }}</div>
+
+          <div class="rank-grid" *ngIf="!rankingsLoading; else rankLoading">
+            <div class="rank-card" *ngFor="let fmt of ['odi','t20','test']">
+              <div class="rank-card-head">
+                <div class="rank-format">{{ fmt.toUpperCase() }}</div>
+              </div>
+              <div class="rank-table">
+                <!-- Team header -->
+                <div class="rank-row rank-row-head" *ngIf="isTeamRankings(); else playerHeader">
+                  <div>Rank</div><div>Team</div><div class="right">Rating</div>
+                </div>
+                <!-- Player header -->
+                <ng-template #playerHeader>
+                  <div class="rank-row rank-row-head rank-row-head-player">
+                    <div>Rank</div><div>Player</div><div class="right">Rating</div>
+                  </div>
+                </ng-template>
+
+                <!-- Team rows -->
+                <ng-container *ngIf="isTeamRankings(); else playerRows">
+                  <ng-container *ngIf="(getActiveRankings() && (fmt==='odi' ? getActiveRankings()?.odi : fmt==='t20' ? getActiveRankings()?.t20 : getActiveRankings()?.test))?.length; else rankEmptyTeam">
+                    <div class="rank-row" *ngFor="let r of (fmt==='odi' ? getActiveRankings()?.odi : fmt==='t20' ? getActiveRankings()?.t20 : getActiveRankings()?.test) | slice:0:10">
+                      <div class="muted">{{ r.rank }}</div>
+                      <div class="rank-team">
+                        <span class="logo-ring logo-ring--22" [style.--ring-bg]="getTeamRingBg(r.team_name)">
+                          <img *ngIf="!isFallbackLogo(r.team_name)" class="logo-inner logo-inner--tight" [src]="getTeamLogoUrl(r.team_name)" (error)="onTeamLogoError($event)" alt="" />
+                          <span *ngIf="isFallbackLogo(r.team_name)" class="logo-inner logo-initial">{{ getInitials(r.team_name) }}</span>
+                        </span>
+                        <div class="rank-teamcode">{{ (r.team_code || getInitials(r.team_name)) }}</div>
+                      </div>
+                      <div class="right">{{ r.rating }}</div>
+                    </div>
+                  </ng-container>
+
+                  <ng-template #rankEmptyTeam>
+                    <div class="rank-empty">No cached {{ fmt.toUpperCase() }} team rankings yet. Run backend fetch.</div>
+                  </ng-template>
+                </ng-container>
+
+                <!-- Player rows -->
+                <ng-template #playerRows>
+                  <ng-container *ngIf="(getActiveRankings() && (fmt==='odi' ? getActiveRankings()?.odi : fmt==='t20' ? getActiveRankings()?.t20 : getActiveRankings()?.test))?.length; else rankEmptyPlayer">
+                    <div class="rank-row rank-row-player" *ngFor="let r of (fmt==='odi' ? getActiveRankings()?.odi : fmt==='t20' ? getActiveRankings()?.t20 : getActiveRankings()?.test) | slice:0:10">
+                      <div class="muted">{{ r.rank }}</div>
+                      <div class="rank-player">
+                        <div class="rank-player-name">{{ r.player_name }}</div>
+                        <div class="rank-player-country">{{ r.country }}</div>
+                      </div>
+                      <div class="right">{{ r.rating }}</div>
+                    </div>
+                  </ng-container>
+
+                  <ng-template #rankEmptyPlayer>
+                    <div class="rank-empty">No cached {{ fmt.toUpperCase() }} rankings yet. Run backend fetch.</div>
+                  </ng-template>
+                </ng-template>
+              </div>
+            </div>
+          </div>
+
+          <ng-template #rankLoading>
+            <div class="empty">Loading rankings...</div>
+          </ng-template>
         </section>
       </section>
     </main>
   </ng-template>
+
+  <!-- NEWS PAGE (header menu -> News) -->
+  <!-- (news handled in otherPage) -->
 
   <!-- SCORECARD MODAL -->
   <div class="modal-overlay" *ngIf="scorecardModalOpen" (click)="closeScorecard()">
@@ -250,4 +3284,6 @@
       </div>
     </div>
   </div>
+
+  </ng-container>
 </div>

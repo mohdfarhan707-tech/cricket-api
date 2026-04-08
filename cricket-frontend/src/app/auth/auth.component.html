@@ -1,0 +1,147 @@
+<div class="auth-layout">
+  <!-- LOGIN -->
+  <div class="auth-card auth-card--login" *ngIf="showLogin">
+    <div class="auth-card-head">
+      <div class="auth-kicker">SIGN IN TO YOUR CREASE</div>
+      <h1 class="auth-title">LOGIN</h1>
+      <span class="auth-icon auth-icon--gold" aria-hidden="true">🏏</span>
+    </div>
+
+    <form class="auth-form" (ngSubmit)="submitLogin()" [formGroup]="loginForm">
+      <label class="auth-field auth-field--outline">
+        <span class="auth-field-label">Username/Email</span>
+        <span class="auth-input-row">
+          <span class="auth-input-ic" aria-hidden="true">👤</span>
+          <input
+            type="text"
+            formControlName="identifier"
+            autocomplete="username"
+            placeholder="Username/Email"
+          />
+        </span>
+      </label>
+
+      <label class="auth-field auth-field--fill">
+        <span class="auth-input-row">
+          <span class="auth-input-ic" aria-hidden="true">🔒</span>
+          <input
+            [type]="showLoginPassword ? 'text' : 'password'"
+            formControlName="password"
+            autocomplete="current-password"
+            placeholder="Password"
+          />
+          <button
+            type="button"
+            class="auth-eye"
+            (click)="showLoginPassword = !showLoginPassword"
+            [attr.aria-label]="showLoginPassword ? 'Hide password' : 'Show password'"
+          >
+            {{ showLoginPassword ? '🙈' : '👁' }}
+          </button>
+        </span>
+      </label>
+
+      <p class="auth-err" *ngIf="loginError">{{ loginError }}</p>
+
+      <button type="submit" class="auth-btn auth-btn--login" [disabled]="submitting">
+        {{ submitting ? 'Please wait…' : 'Login' }}
+      </button>
+    </form>
+
+    <button type="button" class="auth-forgot">Forgot Password?</button>
+
+    <p class="auth-switch">
+      Don't have an account?
+      <button type="button" class="auth-switch-link" (click)="switchToRegister()">SIGN UP</button>
+    </p>
+
+    <div class="auth-season-pill" role="status">
+      <span class="auth-season-bell" aria-hidden="true">🔔</span>
+      IPL SEASON LIVE NOW!
+    </div>
+  </div>
+
+  <!-- REGISTER -->
+  <div class="auth-card auth-card--register" *ngIf="!showLogin">
+    <div class="auth-card-head">
+      <div class="auth-kicker">SIGN UP FOR THE DRAFT</div>
+      <h1 class="auth-title">REGISTER</h1>
+      <span class="auth-icon auth-icon--navy" aria-hidden="true">🏏</span>
+    </div>
+
+    <form class="auth-form" (ngSubmit)="submitRegister()" [formGroup]="registerForm">
+      <label class="auth-field auth-field--fill">
+        <input type="text" formControlName="username" autocomplete="username" placeholder="Username" />
+        <span class="auth-field-hint" *ngIf="regFieldError('username')">{{ regFieldError('username') }}</span>
+      </label>
+
+      <label class="auth-field auth-field--fill">
+        <span class="auth-input-row">
+          <span class="auth-input-ic" aria-hidden="true">✉️</span>
+          <input type="email" formControlName="email" autocomplete="email" placeholder="Email" />
+          <span class="auth-input-ic auth-input-ic--end" aria-hidden="true">🏟️</span>
+        </span>
+        <span class="auth-field-hint" *ngIf="regFieldError('email')">{{ regFieldError('email') }}</span>
+      </label>
+
+      <label class="auth-field auth-field--fill">
+        <span class="auth-input-row">
+          <input
+            [type]="showRegPassword ? 'text' : 'password'"
+            formControlName="password"
+            autocomplete="new-password"
+            placeholder="Password"
+          />
+          <button
+            type="button"
+            class="auth-eye"
+            (click)="showRegPassword = !showRegPassword"
+            [attr.aria-label]="showRegPassword ? 'Hide password' : 'Show password'"
+          >
+            {{ showRegPassword ? '🙈' : '👁' }}
+          </button>
+        </span>
+        <span class="auth-field-hint" *ngIf="regFieldError('password')">{{ regFieldError('password') }}</span>
+      </label>
+
+      <label class="auth-field auth-field--fill">
+        <span class="auth-input-row">
+          <input
+            [type]="showRegPassword2 ? 'text' : 'password'"
+            formControlName="confirmPassword"
+            autocomplete="new-password"
+            placeholder="Confirm Password"
+          />
+          <button
+            type="button"
+            class="auth-eye"
+            (click)="showRegPassword2 = !showRegPassword2"
+            [attr.aria-label]="showRegPassword2 ? 'Hide password' : 'Show password'"
+          >
+            {{ showRegPassword2 ? '🙈' : '👁' }}
+          </button>
+        </span>
+        <span class="auth-field-hint" *ngIf="regPasswordMismatch()">Passwords do not match</span>
+      </label>
+
+      <label class="auth-terms">
+        <input type="checkbox" formControlName="terms" />
+        <span>I agree to <span class="auth-terms-link">Terms &amp; Conditions</span></span>
+      </label>
+      <span class="auth-field-hint" *ngIf="registerForm.get('terms')?.touched && registerForm.get('terms')?.invalid">
+        You must accept the terms to register
+      </span>
+
+      <p class="auth-err" *ngIf="registerError">{{ registerError }}</p>
+
+      <button type="submit" class="auth-btn auth-btn--register" [disabled]="submitting">
+        {{ submitting ? 'Please wait…' : 'Sign Up' }}
+      </button>
+    </form>
+
+    <p class="auth-switch">
+      Already a member?
+      <button type="button" class="auth-switch-link" (click)="switchToLogin()">LOGIN</button>
+    </p>
+  </div>
+</div>

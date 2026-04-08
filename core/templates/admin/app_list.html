@@ -1,0 +1,48 @@
+{% load i18n %}
+
+{% if app_list %}
+  <div class="cricket-app-grid">
+    {% for app in app_list %}
+      <section class="app-{{ app.app_label }} cricket-app-card{% if app.app_url in request.path|urlencode %} is-current{% endif %}">
+        <header class="cricket-app-card__head">
+          <h2>
+            <a href="{{ app.app_url }}" title="{% blocktranslate with name=app.name %}Models in the {{ name }} application{% endblocktranslate %}">
+              {{ app.name }}
+            </a>
+          </h2>
+          <span class="cricket-app-card__count">{{ app.models|length }} {% translate "models" %}</span>
+        </header>
+
+        <div class="cricket-model-list">
+          {% for model in app.models %}
+            {% with model_name=model.object_name|lower %}
+              <article class="cricket-model-row model-{{ model_name }}{% if model.admin_url in request.path|urlencode %} current-model{% endif %}">
+                <div class="cricket-model-row__name" id="{{ app.app_label }}-{{ model_name }}">
+                  {% if model.admin_url %}
+                    <a href="{{ model.admin_url }}"{% if model.admin_url in request.path|urlencode %} aria-current="page"{% endif %}>{{ model.name }}</a>
+                  {% else %}
+                    <span>{{ model.name }}</span>
+                  {% endif %}
+                </div>
+                <div class="cricket-model-row__actions">
+                  {% if model.add_url %}
+                    <a href="{{ model.add_url }}" class="cricket-btn cricket-btn--add" aria-describedby="{{ app.app_label }}-{{ model_name }}">{% translate 'Add' %}</a>
+                  {% endif %}
+                  {% if model.admin_url and show_changelinks %}
+                    {% if model.view_only %}
+                      <a href="{{ model.admin_url }}" class="cricket-btn cricket-btn--view" aria-describedby="{{ app.app_label }}-{{ model_name }}">{% translate 'View' %}</a>
+                    {% else %}
+                      <a href="{{ model.admin_url }}" class="cricket-btn cricket-btn--change" aria-describedby="{{ app.app_label }}-{{ model_name }}">{% translate 'Manage' %}</a>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              </article>
+            {% endwith %}
+          {% endfor %}
+        </div>
+      </section>
+    {% endfor %}
+  </div>
+{% else %}
+  <p>{% translate 'You do not have permission to view or edit anything.' %}</p>
+{% endif %}

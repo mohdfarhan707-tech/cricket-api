@@ -82,16 +82,32 @@ def update_cricket_data():
         return
 
     API_KEY = "9c2c729f-9194-4b1d-bc69-6aa5a16dde1e"
-    # Only keep this series in the DB
-    TOURNAMENT_IDS = ["5978f057-af70-4dcf-b9ee-04831b8df947"]
+    SERIES_NAME_BY_ID = {
+        "5978f057-af70-4dcf-b9ee-04831b8df947": "ICC Men's T20 World Cup 2026",
+        "87c62aac-bc3c-4738-ab93-19da0690488f": "Indian Premier League 2026",
+        "8bfedb5a-500c-4f02-a5c3-17a3d731fe9c": "Pakistan Super League 2026",
+    }
+    # Series we sync from CricAPI series_info (add BBL id here if you use fetch_bbl with a CricAPI uuid).
+    TOURNAMENT_IDS = [
+        "5978f057-af70-4dcf-b9ee-04831b8df947",  # ICC Men's T20 World Cup 2026
+        "87c62aac-bc3c-4738-ab93-19da0690488f",  # Indian Premier League 2026
+        "8bfedb5a-500c-4f02-a5c3-17a3d731fe9c",  # Pakistan Super League 2026
+    ]
 
     # Delete old series (and their matches via cascade)
-    Series.objects.exclude(external_id__in=TOURNAMENT_IDS).delete()
+    #
+    # Keep Cricbuzz-sourced series (e.g. BBL fetched by `fetch_bbl_matches`) which use
+    # an external_id prefixed with `cricbuzz-`.
+    Series.objects.exclude(external_id__in=TOURNAMENT_IDS).exclude(external_id__startswith="cricbuzz-").delete()
 
     for series_id in TOURNAMENT_IDS:
         url = f"https://api.cricapi.com/v1/series_info?apikey={API_KEY}&id={series_id}"
-        response = requests.get(url, timeout=10)
-        root = response.json() or {}
+        try:
+            response = requests.get(url, timeout=20)
+            root = response.json() or {}
+        except Exception:
+            # Skip failed series requests instead of aborting whole refresh.
+            continue
         if root.get("status") == "failure":
             continue
 
@@ -102,9 +118,17 @@ def update_cricket_data():
             continue
 
         # 1. Update Series
+        series_name = (
+            data.get("info", {}).get("name")
+            or data.get("name")
+            or root.get("info", {}).get("name")
+            or SERIES_NAME_BY_ID.get(series_id)
+            or "Tournament"
+        )
+
         series_obj, _ = Series.objects.update_or_create(
             external_id=series_id,
-            defaults={"name": data.get("info", {}).get("name", "Tournament")},
+            defaults={"name": series_name},
         )
 
         # 2. Update Matches + scores
@@ -124,9 +148,14 @@ def update_cricket_data():
             home_score = hs or home_score
             away_score = as_ or away_score
 
-            # Optional enrichment (very limited) for live matches only
+            # Light score enrichment when list payload is thin (live / finished)
             status = (m.get("status") or "").lower()
-            if (not home_score or not away_score) and ("live" in status):
+            if (not home_score or not away_score) and (
+                "live" in status
+                or "completed" in status
+                or "result" in status
+                or "won" in status
+            ):
                 t1, t2, t1s, t2s = _fetch_match_score(match_id, API_KEY)
                 if t1s or t2s:
                     home_score = t1s or home_score
@@ -135,7 +164,7 @@ def update_cricket_data():
                     team_home = t1
                     team_away = t2
 
-            Match.objects.update_or_create(
+            match_obj, _ = Match.objects.update_or_create(
                 external_id=match_id,
                 defaults={
                     "series": series_obj,
@@ -147,5 +176,18 @@ def update_cricket_data():
                     "away_score": away_score or "",
                 },
             )
+
+            # If this looks finished but we still have no scores, fetch full scorecard once.
+            # This is slower, but ensures completed tournaments (e.g. WC) render properly.
+            if match_obj and (not match_obj.home_score or not match_obj.away_score) and (
+                "won" in status or "result" in status or "completed" in status or "tie" in status or "no result" in status
+            ):
+                try:
+                    from .scorecard_helpers import fetch_scorecard, apply_scorecard_to_match
+                    sc = fetch_scorecard(match_id)
+                    if sc:
+                        apply_scorecard_to_match(match_obj, sc)
+                except Exception:
+                    pass
 
     _LAST_UPDATE_AT = now

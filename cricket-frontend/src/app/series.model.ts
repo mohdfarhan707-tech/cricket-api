@@ -6,6 +6,11 @@ export interface Match {
   team_away: string;
   home_score?: string;
   away_score?: string;
+  scorecard_data?: any;
+  /** Set when this object was built from a live-feed row (for UI rules). */
+  from_live_feed?: boolean;
+  /** Live API: true when the fixture has ended. */
+  is_finished?: boolean;
 }
 
 export interface Series {
@@ -24,4 +29,6 @@ export interface LiveMatch {
   away_score?: string;
   is_live?: boolean;
   is_finished?: boolean;
+  /** Present when scorecard was fetched and cached server-side */
+  scorecard_data?: unknown;
 }

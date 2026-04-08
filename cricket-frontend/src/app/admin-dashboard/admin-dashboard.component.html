@@ -1,0 +1,91 @@
+<div class="adm">
+  <aside class="adm-side">
+    <div class="adm-brand">
+      <span class="adm-brand-mark">C</span>
+      <div class="adm-brand-text">
+        <span class="adm-brand-title">CricLive</span>
+        <span class="adm-brand-sub">Admin Console</span>
+      </div>
+    </div>
+
+    <nav class="adm-nav">
+      <span class="adm-nav-item adm-nav-item--active">Overview</span>
+      <button type="button" class="adm-nav-item adm-nav-item--btn" (click)="onViewPublicSite()">
+        Public site
+      </button>
+      <a class="adm-nav-item adm-nav-item--link" [href]="djangoAdminUrl" target="_blank" rel="noopener noreferrer">
+        Django Admin ↗
+      </a>
+    </nav>
+
+    <div class="adm-side-foot">
+      <div class="adm-user" *ngIf="auth.currentUser() as u">
+        <div class="adm-user-name">{{ u.username }}</div>
+        <div class="adm-user-email">{{ u.email || '—' }}</div>
+      </div>
+      <button type="button" class="adm-btn adm-btn--ghost" (click)="onLogout()">Sign out</button>
+    </div>
+  </aside>
+
+  <main class="adm-main">
+    <header class="adm-top">
+      <h1 class="adm-h1">Overview</h1>
+      <p class="adm-lead">Manage data and jump into tools. Staff accounts only.</p>
+    </header>
+
+    <div class="adm-banner adm-banner--err" *ngIf="error">{{ error }}</div>
+
+    <div class="adm-cards" *ngIf="!loading && summary">
+      <article class="adm-card">
+        <div class="adm-card-k">Users</div>
+        <div class="adm-card-v">{{ summary.users_total }}</div>
+        <div class="adm-card-h">Registered accounts</div>
+      </article>
+      <article class="adm-card">
+        <div class="adm-card-k">Series</div>
+        <div class="adm-card-v">{{ summary.series_total }}</div>
+        <div class="adm-card-h">Tournament rows</div>
+      </article>
+      <article class="adm-card">
+        <div class="adm-card-k">Matches</div>
+        <div class="adm-card-v">{{ summary.matches_total }}</div>
+        <div class="adm-card-h">Fixtures in database</div>
+      </article>
+      <article class="adm-card adm-card--accent">
+        <div class="adm-card-k">Live cache</div>
+        <div class="adm-card-v">{{ summary.live_match_rows }}</div>
+        <div class="adm-card-h">LiveMatch snapshots</div>
+      </article>
+    </div>
+
+    <div class="adm-loading" *ngIf="loading">Loading dashboard…</div>
+
+    <section class="adm-panel">
+      <h2 class="adm-h2">Data sync</h2>
+      <p class="adm-panel-desc">
+        Pulls latest series and matches from CricAPI into the database (same as
+        <code>/api/matches/?refresh=1</code>). Respect your API plan limits.
+      </p>
+      <div class="adm-actions">
+        <button type="button" class="adm-btn adm-btn--primary" [disabled]="syncBusy" (click)="triggerMatchSync()">
+          {{ syncBusy ? 'Syncing…' : 'Refresh match data' }}
+        </button>
+        <button type="button" class="adm-btn adm-btn--outline" (click)="loadSummary()" [disabled]="loading">
+          Reload stats
+        </button>
+      </div>
+      <p class="adm-sync-msg" *ngIf="syncMessage">{{ syncMessage }}</p>
+    </section>
+
+    <section class="adm-panel adm-panel--muted">
+      <h2 class="adm-h2">Django administration</h2>
+      <p class="adm-panel-desc">
+        The classic Django admin uses a separate session login. Open it in a new tab and sign in with your staff
+        username and password if you need models, users, or groups.
+      </p>
+      <a class="adm-btn adm-btn--outline" [href]="djangoAdminUrl" target="_blank" rel="noopener noreferrer">
+        Open /admin/
+      </a>
+    </section>
+  </main>
+</div>

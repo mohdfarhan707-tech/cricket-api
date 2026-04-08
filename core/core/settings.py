@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import os
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,7 +27,8 @@ SECRET_KEY = 'django-insecure-)(eilp*o$acyv!l!nwpgg7_#6og)=+#l49x=i!7z)ghosy_n+i
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# Local dev + Django test client (uses Host: testserver)
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
 
 
 # Application definition
@@ -39,9 +42,13 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
-    'matches',
-    'live',  # new app for live matches
+    'matches.apps.MatchesConfig',
+    'live.apps.LiveConfig',
     'news',  # cricket news (ESPNcricinfo RSS)
+    'rankings.apps.RankingsConfig',
+    'upcoming',
+    'auction.apps.AuctionConfig',
+    'accounts',
 ]
 
 MIDDLEWARE = [
@@ -60,7 +67,7 @@ ROOT_URLCONF = 'core.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -95,6 +102,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 8},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
@@ -121,5 +129,29 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATICFILES_DIRS = [BASE_DIR / 'static']
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+REST_FRAMEWORK = {
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': False,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+# YouTube Data API key for highlights endpoint caching
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "AIzaSyD12erSvvJJMlrCfOJHymjmYgi-Ayp_ycI")
+
+# RapidAPI (Cricbuzz) — rankings sync via: python manage.py fetch_all_rankings
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
+RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST", "cricbuzz-cricket.p.rapidapi.com")

@@ -1,0 +1,81 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'admin/css/dashboard.css' %}">
+{% endblock %}
+
+{% block coltype %}colMS{% endblock %}
+{% block bodyclass %}{{ block.super }} dashboard cricket-admin-dashboard{% endblock %}
+{% block nav-breadcrumbs %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+
+{% block content %}
+<section class="cricket-admin-topbar">
+  <div>
+    <h1>{% translate "Operations dashboard" %}</h1>
+    <p>{% translate "Manage matches, live feeds, rankings, and auction data from a single clean workspace." %}</p>
+  </div>
+  <div class="cricket-admin-topbar__chips">
+    <span class="cricket-chip cricket-chip--matches">{% translate "Matches" %}</span>
+    <span class="cricket-chip cricket-chip--live">{% translate "Live" %}</span>
+    <span class="cricket-chip cricket-chip--rankings">{% translate "Rankings" %}</span>
+    <span class="cricket-chip cricket-chip--auction">{% translate "Auction" %}</span>
+  </div>
+</section>
+
+<section class="cricket-admin-kpis" aria-label="{% translate 'Quick guide' %}">
+  <article class="kpi-card">
+    <h2>{% translate "Clean data flow" %}</h2>
+    <p>{% translate "Use Matches & series for fixture data and cached scorecards." %}</p>
+  </article>
+  <article class="kpi-card">
+    <h2>{% translate "Live operations" %}</h2>
+    <p>{% translate "Use Live feed to monitor currentMatches snapshots and result caching." %}</p>
+  </article>
+  <article class="kpi-card">
+    <h2>{% translate "Stat management" %}</h2>
+    <p>{% translate "Use Rankings and Stats models to keep frontend leaderboards updated." %}</p>
+  </article>
+</section>
+
+<div id="content-main" class="app-list cricket-admin-app-list">
+  {% include "admin/app_list.html" with app_list=app_list show_changelinks=True %}
+</div>
+{% endblock %}
+
+{% block sidebar %}
+<div id="content-related" class="cricket-admin-sidebar">
+  <div class="module module--actions" id="recent-actions-module">
+    <h2>{% translate 'Recent actions' %}</h2>
+    <h3>{% translate 'My actions' %}</h3>
+    {% load log %}
+    {% get_admin_log 12 as admin_log for_user user %}
+    {% if not admin_log %}
+      <p class="empty-note">{% translate 'No recent actions yet.' %}</p>
+    {% else %}
+      <ul class="actionlist actionlist--modern">
+        {% for entry in admin_log %}
+          <li class="action-item {% if entry.is_addition %}addlink{% endif %}{% if entry.is_change %}changelink{% endif %}{% if entry.is_deletion %}deletelink{% endif %}">
+            <div class="action-item__title">
+              {% if entry.is_deletion or not entry.get_admin_url %}
+                {{ entry.object_repr }}
+              {% else %}
+                <a href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>
+              {% endif %}
+            </div>
+            <div class="action-item__meta">
+              {% if entry.content_type %}
+                {% filter capfirst %}{{ entry.content_type.name }}{% endfilter %}
+              {% else %}
+                {% translate 'Unknown content' %}
+              {% endif %}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

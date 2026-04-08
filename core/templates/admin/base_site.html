@@ -1,0 +1,17 @@
+{% extends "admin/base.html" %}
+{% load static i18n %}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Cricket admin') }}{% endblock %}
+{% block branding %}
+<div class="cricket-navbrand">
+  <a class="cricket-navbrand__logo" href="{% url 'admin:index' %}" aria-label="Admin home">C</a>
+  <div class="cricket-navbrand__text">
+    <div id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:_('Cricket administration') }}</a></div>
+    <div class="cricket-navbrand__subtitle">{% translate "Operations Console" %}</div>
+  </div>
+</div>
+{% if user.is_anonymous %}
+  {% include "admin/color_theme_toggle.html" %}
+{% endif %}
+{% endblock %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'admin/css/cricket_admin.css' %}">{% endblock %}
+{% block nav-global %}{% endblock %}
