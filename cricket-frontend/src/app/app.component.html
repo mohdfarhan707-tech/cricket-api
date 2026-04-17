@@ -2276,7 +2276,7 @@
                             <tr *ngFor="let b of inn.batting">
                               <td class="bbl-batter-cell">
                                 <div class="bbl-batter-name">
-                                  <span>{{ b.batsman?.name }}</span>
+                                  <span>{{ b.batsman.name }}</span>
                                   <span class="bbl-batter-arrow">⌄</span>
                                 </div>
                                 <div class="bbl-batter-dismissal">
@@ -2311,7 +2311,7 @@
                             <tr *ngFor="let b of inn.bowling">
                               <td class="bbl-batter-cell">
                                 <div class="bbl-batter-name">
-                                  <span>{{ b.bowler?.name }}</span>
+                                  <span>{{ b.bowler.name }}</span>
                                   <span class="bbl-batter-arrow">⌄</span>
                                 </div>
                               </td>
@@ -2674,7 +2674,7 @@
                         </div>
                       </div>
                     </div>
-                    <div class="bbl-summary-result">{{ selectedUpcoming?.status }}</div>
+                    <div class="bbl-summary-result">{{ selectedUpcoming.status }}</div>
                   </div>
                 </div>
               </div>
@@ -2698,7 +2698,7 @@
                       </div>
                       <div class="wc-teambar-team right">{{ sides[1].team }}</div>
                     </div>
-                    <div class="wc-summary-venue">{{ selectedUpcoming?.venue }}</div>
+                    <div class="wc-summary-venue">{{ selectedUpcoming.venue }}</div>
 
                     <div class="wc-summary-grid">
                       <div class="wc-side" *ngFor="let s of sides">
@@ -3250,7 +3250,7 @@
                 </thead>
                 <tbody>
                   <tr *ngFor="let b of inn.batting" [class.dismissed]="b.dismissal">
-                    <td class="name">{{ b.batsman?.name }}</td>
+                    <td class="name">{{ b.batsman.name }}</td>
                     <td class="dismissal">{{ b['dismissal-text'] || (b.dismissal ? 'b' : '') }}</td>
                     <td>{{ b.r }}</td>
                     <td>{{ b.b }}</td>
@@ -3269,7 +3269,7 @@
                 </thead>
                 <tbody>
                   <tr *ngFor="let b of inn.bowling">
-                    <td class="name">{{ b.bowler?.name }}</td>
+                    <td class="name">{{ b.bowler.name }}</td>
                     <td>{{ b.o }}</td>
                     <td>{{ b.m }}</td>
                     <td>{{ b.r }}</td>
