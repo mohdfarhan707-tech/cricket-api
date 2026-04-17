@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-)(eilp*o$acyv!l!nwpgg7_#6og)=+#l49x=i!7z)ghosy_n+i
 DEBUG = True
 
 # Local dev + Django test client (uses Host: testserver)
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver",'criclive-2dzo.onrender.com']
 
 
 # Application definition
