@@ -22,7 +22,7 @@ const USER_KEY = 'criclive_user_json';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private apiUrl = 'http://127.0.0.1:8000/api/';
+  private apiUrl = 'https://criclive-2dzo.onrender.com/api/';
   private userSubject = new BehaviorSubject<AuthUser | null>(this.readStoredUser());
 
   readonly user$ = this.userSubject.asObservable();
