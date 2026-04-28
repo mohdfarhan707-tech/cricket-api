@@ -1198,6 +1198,8 @@
 
       <!-- LIVE: ICC Men's T20 WC-style score cards (same as league World Cup view) -->
       <div id="crex-live-matches-anchor" class="match-list" *ngIf="activeTab === 'live'" tabindex="-1">
+        <div class="empty" *ngIf="liveLoading">Loading live matches...</div>
+        <div class="empty" *ngIf="!liveLoading && liveError">{{ liveError }}</div>
         <ng-container *ngFor="let match of getLiveMatchesVisible()">
           <ng-container
             *ngTemplateOutlet="
@@ -1207,11 +1209,13 @@
           ></ng-container>
         </ng-container>
 
-        <div class="empty" *ngIf="!getLiveMatchesVisible().length">No live matches right now.</div>
+        <div class="empty" *ngIf="!liveLoading && !liveError && !getLiveMatchesVisible().length">No live matches right now.</div>
       </div>
 
       <!-- UPCOMING: use upcomingMatches only -->
       <div class="match-list" *ngIf="activeTab === 'upcoming'">
+        <div class="empty" *ngIf="upcomingLoading">Loading upcoming matches...</div>
+        <div class="empty" *ngIf="!upcomingLoading && upcomingError">{{ upcomingError }}</div>
         <ng-container *ngIf="getUpcomingMatchesVisible().length; else noUpcoming">
           <ng-container *ngFor="let grp of getUpcomingGroupedByDate()">
             <div class="up-date">{{ grp.date }}</div>
@@ -1247,12 +1251,14 @@
           </ng-container>
         </ng-container>
         <ng-template #noUpcoming>
-          <div class="empty">No upcoming matches.</div>
+          <div class="empty" *ngIf="!upcomingLoading && !upcomingError">No upcoming matches.</div>
         </ng-template>
       </div>
 
       <!-- ALL/RESULTS: show series matches + finished live results only (not live) -->
       <div class="match-list" *ngIf="activeTab !== 'live' && activeTab !== 'upcoming'">
+        <div class="empty" *ngIf="matchesLoading">Loading matches...</div>
+        <div class="empty" *ngIf="!matchesLoading && matchesError">{{ matchesError }}</div>
         <div class="subpanel" *ngIf="getFinishedLiveResultsVisible().length">
           <div class="subpanel-title">Recent live results</div>
           <ng-container *ngFor="let match of getFinishedLiveResultsVisible()">
@@ -1367,6 +1373,9 @@
             </ng-container>
           </div>
         </ng-container>
+        <div class="empty" *ngIf="!matchesLoading && !matchesError && !getVisibleSeries().length && !getFinishedLiveResultsVisible().length">
+          No data available.
+        </div>
       </div>
       </ng-template>
     </section>
@@ -1375,6 +1384,8 @@
     <aside class="right">
       <section class="panel">
         <div class="panel-title">News</div>
+        <div class="empty" *ngIf="newsLoading">Loading news...</div>
+        <div class="empty" *ngIf="!newsLoading && newsError">{{ newsError }}</div>
         <a class="news-mini" *ngFor="let n of newsItems.slice(0, 8)" [href]="n.link" target="_blank" rel="noopener noreferrer">
           <img *ngIf="n.image_url" class="news-mini-img" [src]="n.image_url" (error)="onTeamLogoError($event)" alt="" />
           <div class="news-mini-body">
@@ -1382,7 +1393,7 @@
             <div class="news-mini-meta">{{ formatNewsDate(n.published_at) }}</div>
           </div>
         </a>
-        <div class="empty" *ngIf="!newsItems.length">No news loaded.</div>
+        <div class="empty" *ngIf="!newsLoading && !newsError && !newsItems.length">No news loaded.</div>
       </section>
     </aside>
   </main>
@@ -1394,6 +1405,8 @@
         <section class="center news-center">
           <section class="panel">
             <div class="panel-title">News</div>
+            <div class="empty" *ngIf="newsLoading">Loading news...</div>
+            <div class="empty" *ngIf="!newsLoading && newsError">{{ newsError }}</div>
             <a
               class="news-row"
               *ngFor="let n of newsItems"
@@ -1412,7 +1425,7 @@
                 <div class="news-summary" *ngIf="n.summary">{{ n.summary }}</div>
               </div>
             </a>
-            <div class="empty" *ngIf="!newsItems.length">No news loaded.</div>
+            <div class="empty" *ngIf="!newsLoading && !newsError && !newsItems.length">No news loaded.</div>
           </section>
         </section>
       </main>

@@ -45,6 +45,16 @@ export class AppComponent implements OnInit, OnDestroy {
   liveResults: LiveMatch[] = [];
   newsItems: NewsItem[] = [];
   upcomingMatches: UpcomingMatch[] = [];
+  matchesLoading = true;
+  liveLoading = true;
+  liveResultsLoading = true;
+  upcomingLoading = true;
+  newsLoading = true;
+  matchesError: string | null = null;
+  liveError: string | null = null;
+  liveResultsError: string | null = null;
+  upcomingError: string | null = null;
+  newsError: string | null = null;
 
   // 'all' -> All series, 'series' -> specific series from masterData, 'ipl'/'psl' -> special leagues
   selectedLeagueId: string = '';
@@ -380,45 +390,82 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private refreshLiveMatches() {
+    this.liveLoading = true;
+    this.liveError = null;
     this.cricketService.getLiveMatches().subscribe({
       next: (data) => {
         this.liveMatches = data || [];
+        this.liveLoading = false;
       },
-      error: (err) => console.error('Live matches error:', err)
+      error: (err) => {
+        console.error('Live matches error:', err);
+        this.liveError = 'Failed to load live matches.';
+        this.liveLoading = false;
+      }
     });
   }
 
   private refreshLiveResults() {
+    this.liveResultsLoading = true;
+    this.liveResultsError = null;
     this.cricketService.getLiveResults().subscribe({
       next: (data) => {
         this.liveResults = data || [];
+        this.liveResultsLoading = false;
       },
-      error: (err) => console.error('Live results error:', err)
+      error: (err) => {
+        console.error('Live results error:', err);
+        this.liveResultsError = 'Failed to load live results.';
+        this.liveResultsLoading = false;
+      }
     });
   }
 
   ngOnInit() {
+    this.matchesLoading = true;
+    this.matchesError = null;
     this.cricketService.getMatches().subscribe({
       next: (data) => {
         this.masterData = data;
         this.seriesData = data; // Initialize the display variable
+        this.matchesLoading = false;
       },
-      error: (err) => console.error('Connection Error:', err)
+      error: (err) => {
+        console.error('Connection Error:', err);
+        this.matchesError = 'Failed to load matches.';
+        this.matchesLoading = false;
+      }
     });
 
     this.refreshLiveMatches();
     this.refreshLiveResults();
 
+    this.upcomingLoading = true;
+    this.upcomingError = null;
     this.cricketService.getUpcomingMatches().subscribe({
-      next: (data) => { this.upcomingMatches = data || []; },
-      error: (err) => console.error('Upcoming error:', err)
+      next: (data) => {
+        this.upcomingMatches = data || [];
+        this.upcomingLoading = false;
+      },
+      error: (err) => {
+        console.error('Upcoming error:', err);
+        this.upcomingError = 'Failed to load upcoming matches.';
+        this.upcomingLoading = false;
+      }
     });
 
+    this.newsLoading = true;
+    this.newsError = null;
     this.cricketService.getNews().subscribe({
       next: (data) => {
         this.newsItems = data || [];
+        this.newsLoading = false;
       },
-      error: (err) => console.error('News error:', err)
+      error: (err) => {
+        console.error('News error:', err);
+        this.newsError = 'Failed to load news.';
+        this.newsLoading = false;
+      }
     });
 
     this.auth.user$.subscribe(() => this.cdr.markForCheck());

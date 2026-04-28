@@ -1,8 +1,10 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { Observable, throwError, timer } from 'rxjs';
+import { catchError, retry, tap } from 'rxjs/operators';
 import { Series, LiveMatch } from './series.model';
 import { Scorecard } from './scorecard.model';
+import { environment } from '../environments/environment';
 
 export interface NewsItem {
   id: number;
@@ -208,115 +210,160 @@ export interface SeriesStatsCacheResponse<T = any> {
   providedIn: 'root'
 })
 export class CricketService {
-  private apiUrl = 'http://127.0.0.1:8000/api/';
+  private readonly apiUrl = environment.apiUrl;
+  private readonly defaultHeaders = new HttpHeaders({
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  });
 
   constructor(private http: HttpClient) { }
 
+  private get<T>(path: string): Observable<T> {
+    const url = `${this.apiUrl}${path}`;
+    return this.http.get<T>(url, { headers: this.defaultHeaders }).pipe(
+      retry({
+        count: 2,
+        delay: (error, retryCount) => {
+          // Render free tier can cold-start; retry transient/network failures.
+          const status = error?.status ?? 0;
+          if ([0, 502, 503, 504].includes(status)) {
+            return timer(retryCount * 1000);
+          }
+          throw error;
+        },
+      }),
+      tap((response) => console.info(`[API] GET ${url}`, response)),
+      catchError((error) => {
+        console.error(`[API] GET ${url} failed`, error);
+        return throwError(() => error);
+      }),
+    );
+  }
+
+  private post<T>(path: string, body: unknown): Observable<T> {
+    const url = `${this.apiUrl}${path}`;
+    return this.http.post<T>(url, body, { headers: this.defaultHeaders }).pipe(
+      retry({
+        count: 2,
+        delay: (error, retryCount) => {
+          const status = error?.status ?? 0;
+          if ([0, 502, 503, 504].includes(status)) {
+            return timer(retryCount * 1000);
+          }
+          throw error;
+        },
+      }),
+      tap((response) => console.info(`[API] POST ${url}`, response)),
+      catchError((error) => {
+        console.error(`[API] POST ${url} failed`, error);
+        return throwError(() => error);
+      }),
+    );
+  }
+
   getMatches(): Observable<Series[]> {
-    return this.http.get<Series[]>(this.apiUrl + 'matches/');
+    return this.get<Series[]>('matches/');
   }
 
   getScorecard(matchId: string): Observable<Scorecard> {
     const id = String(matchId || '').trim();
-    return this.http.get<Scorecard>(`${this.apiUrl}matches/${id}/scorecard/`);
+    return this.get<Scorecard>(`matches/${id}/scorecard/`);
   }
 
   getLiveMatches(): Observable<LiveMatch[]> {
-    return this.http.get<LiveMatch[]>(this.apiUrl + 'live-matches/');
+    return this.get<LiveMatch[]>('live-matches/');
   }
 
   getLiveScorecard(matchId: string): Observable<Scorecard> {
-    return this.http.get<Scorecard>(`${this.apiUrl}live-matches/${matchId}/scorecard/`);
+    return this.get<Scorecard>(`live-matches/${matchId}/scorecard/`);
   }
 
   getLiveResults(): Observable<LiveMatch[]> {
-    return this.http.get<LiveMatch[]>(this.apiUrl + 'live-results/');
+    return this.get<LiveMatch[]>('live-results/');
   }
 
   getNews(): Observable<NewsItem[]> {
-    return this.http.get<NewsItem[]>(this.apiUrl + 'news/');
+    return this.get<NewsItem[]>('news/');
   }
 
   getRankings(kind: RankingKind): Observable<RankingsResponse<any>> {
-    return this.http.get<RankingsResponse<any>>(this.apiUrl + `rankings/${kind}/`);
+    return this.get<RankingsResponse<any>>(`rankings/${kind}/`);
   }
 
   getUpcomingMatches(): Observable<UpcomingMatch[]> {
-    return this.http.get<UpcomingMatch[]>(this.apiUrl + 'upcoming-matches/');
+    return this.get<UpcomingMatch[]>('upcoming-matches/');
   }
 
   getLeagueStandings(league: 'ipl' | 'psl', refresh = false): Observable<LeagueStandingsResponse> {
     const q = refresh ? '?league=' + league + '&refresh=1' : '?league=' + league;
-    return this.http.get<LeagueStandingsResponse>(this.apiUrl + 'league-standings/' + q);
+    return this.get<LeagueStandingsResponse>('league-standings/' + q);
   }
 
   getTeamLastN(team: string, scope: 'overall' | 'on_venue' = 'overall'): Observable<TeamLastNStat> {
-    return this.http.get<TeamLastNStat>(`${this.apiUrl}team-lastn/?team=${encodeURIComponent(team)}&scope=${encodeURIComponent(scope)}`);
+    return this.get<TeamLastNStat>(`team-lastn/?team=${encodeURIComponent(team)}&scope=${encodeURIComponent(scope)}`);
   }
 
   getHeadToHead(a: string, b: string, scope: 'overall' = 'overall'): Observable<TeamHeadToHeadStat> {
-    return this.http.get<TeamHeadToHeadStat>(`${this.apiUrl}head-to-head/?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&scope=${encodeURIComponent(scope)}`);
+    return this.get<TeamHeadToHeadStat>(`head-to-head/?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&scope=${encodeURIComponent(scope)}`);
   }
 
   getTeamForm(team: string, n: number = 5): Observable<TeamFormStat> {
-    return this.http.get<TeamFormStat>(`${this.apiUrl}team-form/?team=${encodeURIComponent(team)}&n=${encodeURIComponent(String(n))}`);
+    return this.get<TeamFormStat>(`team-form/?team=${encodeURIComponent(team)}&n=${encodeURIComponent(String(n))}`);
   }
 
   getTeamSquad(teamId: string, refresh: boolean = false): Observable<TeamSquadResponse> {
     const r = refresh ? '&refresh=1' : '';
-    return this.http.get<TeamSquadResponse>(`${this.apiUrl}team-squad/?team_id=${encodeURIComponent(teamId)}${r}`);
+    return this.get<TeamSquadResponse>(`team-squad/?team_id=${encodeURIComponent(teamId)}${r}`);
   }
 
   getMatchHighlights(matchId: string, refresh: boolean = false): Observable<MatchHighlightsResponse> {
     const id = String(matchId || '').trim();
     const r = refresh ? '?refresh=1' : '';
-    return this.http.get<MatchHighlightsResponse>(`${this.apiUrl}matches/${id}/highlights/${r}`);
+    return this.get<MatchHighlightsResponse>(`matches/${id}/highlights/${r}`);
   }
 
   getBblStats(): Observable<SeriesStatsCacheResponse<BblStatsData>> {
-    return this.http.get<SeriesStatsCacheResponse<BblStatsData>>(`${this.apiUrl}bbl-stats/`);
+    return this.get<SeriesStatsCacheResponse<BblStatsData>>('bbl-stats/');
   }
 
   /** Mini auction (IPL / PSL) — backend persists session + cache. */
   createMiniAuction(league: 'ipl' | 'psl', userTeamCode: string): Observable<MiniAuctionCreateResponse> {
-    return this.http.post<MiniAuctionCreateResponse>(`${this.apiUrl}auction/create/`, {
+    return this.post<MiniAuctionCreateResponse>('auction/create/', {
       league,
       user_team_code: userTeamCode,
     });
   }
 
   beginMiniAuction(sessionId: string): Observable<{ ok: boolean; state: MiniAuctionState }> {
-    return this.http.post<{ ok: boolean; state: MiniAuctionState }>(
-      `${this.apiUrl}auction/${sessionId}/begin/`,
+    return this.post<{ ok: boolean; state: MiniAuctionState }>(
+      `auction/${sessionId}/begin/`,
       {},
     );
   }
 
   getMiniAuctionState(sessionId: string): Observable<MiniAuctionState> {
-    return this.http.get<MiniAuctionState>(`${this.apiUrl}auction/${sessionId}/state/`);
+    return this.get<MiniAuctionState>(`auction/${sessionId}/state/`);
   }
 
   bidMiniAuction(sessionId: string, teamId: string): Observable<MiniAuctionState> {
-    return this.http.post<MiniAuctionState>(`${this.apiUrl}auction/${sessionId}/bid/`, { team_id: teamId });
+    return this.post<MiniAuctionState>(`auction/${sessionId}/bid/`, { team_id: teamId });
   }
 
   stopMiniAuction(sessionId: string): Observable<{ ok: boolean; state: MiniAuctionState }> {
-    return this.http.post<{ ok: boolean; state: MiniAuctionState }>(`${this.apiUrl}auction/${sessionId}/stop/`, {});
+    return this.post<{ ok: boolean; state: MiniAuctionState }>(`auction/${sessionId}/stop/`, {});
   }
 
   resumeMiniAuction(sessionId: string): Observable<{ ok: boolean; state: MiniAuctionState }> {
-    return this.http.post<{ ok: boolean; state: MiniAuctionState }>(`${this.apiUrl}auction/${sessionId}/resume/`, {});
+    return this.post<{ ok: boolean; state: MiniAuctionState }>(`auction/${sessionId}/resume/`, {});
   }
 
   restartMiniAuction(sessionId: string): Observable<{ ok: boolean; state: MiniAuctionState }> {
-    return this.http.post<{ ok: boolean; state: MiniAuctionState }>(`${this.apiUrl}auction/${sessionId}/restart/`, {});
+    return this.post<{ ok: boolean; state: MiniAuctionState }>(`auction/${sessionId}/restart/`, {});
   }
 
   /** Same IPL/PSL roster the backend uses to build the auction pool (not random frontend data). */
   getMiniAuctionPoolPreview(league: 'ipl' | 'psl'): Observable<MiniAuctionPoolPreviewResponse> {
-    return this.http.get<MiniAuctionPoolPreviewResponse>(
-      `${this.apiUrl}auction/pool-preview/?league=${encodeURIComponent(league)}`,
-    );
+    return this.get<MiniAuctionPoolPreviewResponse>(`auction/pool-preview/?league=${encodeURIComponent(league)}`);
   }
 }
 

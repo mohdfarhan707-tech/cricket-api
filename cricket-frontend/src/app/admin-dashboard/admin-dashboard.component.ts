@@ -1,6 +1,7 @@
 import { Component, EventEmitter, OnInit, Output } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../auth.service';
+import { environment } from '../../environments/environment';
 
 export interface AdminSummary {
   users_total: number;
@@ -20,7 +21,7 @@ export class AdminDashboardComponent implements OnInit {
   @Output() openPublicSite = new EventEmitter<void>();
   @Output() logout = new EventEmitter<void>();
 
-  private readonly api = 'http://127.0.0.1:8000/api/';
+  private readonly api = environment.apiUrl;
 
   summary: AdminSummary | null = null;
   loading = true;
@@ -28,7 +29,7 @@ export class AdminDashboardComponent implements OnInit {
   syncBusy = false;
   syncMessage: string | null = null;
 
-  readonly djangoAdminUrl = 'http://127.0.0.1:8000/admin/';
+  readonly djangoAdminUrl = environment.adminUrl;
 
   constructor(
     private http: HttpClient,

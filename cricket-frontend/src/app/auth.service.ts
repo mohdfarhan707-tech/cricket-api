@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { BehaviorSubject, Observable, tap } from 'rxjs';
+import { environment } from '../environments/environment';
 
 export interface AuthUser {
   id: number;
@@ -22,7 +23,7 @@ const USER_KEY = 'criclive_user_json';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private apiUrl = 'https://criclive-2dzo.onrender.com/api/';
+  private readonly apiUrl = environment.apiUrl;
   private userSubject = new BehaviorSubject<AuthUser | null>(this.readStoredUser());
 
   readonly user$ = this.userSubject.asObservable();
